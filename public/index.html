@@ -1690,7 +1690,7 @@ function renderMine() {
     return;
   }
   if (s.phase === "question" && (s.q?.kind === "closest" || s.q?.kind === "hottake")) {
-    // The big screen is shared, so the host's number is masked while they type.
+    // Patched in place so a half-typed guess survives state updates.
     if (+bar.dataset.qi !== s.qi || !$("#mstat")) {
       bar.dataset.qi = s.qi;
       bar.innerHTML = `<span class="who" id="mwho"></span><span id="mstat"></span>`;
@@ -1700,7 +1700,7 @@ function renderMine() {
     else if (mineFrozen) $("#mstat").innerHTML = `<span class="frz">🧊 Frozen by ${esc(me.frozenBy)}</span>`;
     else if (!$("#mform")) {
       $("#mstat").innerHTML = s.q.kind === "closest"
-        ? `<form class="gform" id="mform"><input id="minput" type="password" inputmode="decimal" autocomplete="off" placeholder="Your guess (hidden)"><button>Lock in</button></form>`
+        ? `<form class="gform" id="mform"><input id="minput" inputmode="decimal" autocomplete="off" placeholder="Your guess"><button>Lock in</button></form>`
         : `<form class="gform" id="mform"><select id="magree"><option value="1">👍 Agree</option><option value="0">👎 Disagree</option></select>
            <select id="mpct">${Array.from({ length: 21 }, (_, i) => `<option ${i === 10 ? "selected" : ""}>${i * 5}</option>`).join("")}</select><span class="muted">% agree</span><button>Lock in</button></form>`;
       $("#mform").onsubmit = (e) => {
