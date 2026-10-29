@@ -18,7 +18,7 @@ interface Settings {
 }
 
 interface Question {
-  kind: "quiz" | "vote";
+  kind: "quiz" | "vote" | "draw"; // a draw round's text is its secret word ("" = pick one)
   text: string;
   options: string[];
   correct: number;
@@ -44,6 +44,8 @@ interface Player {
   banana: boolean; // buttons reshuffled this question
   swapPending: boolean;
   lastReact: number;
+  lastGuess: number;
+  drawn: number; // times this player has been the artist
   titles: string[]; // won team votes
   stats: Stats;
 }
@@ -80,6 +82,20 @@ interface Reveal {
   rankBefore: Record<string, number>;
   picks: Record<string, number | null>;
   roast: string;
+  draw: { word: string; drawerId: string; got: { id: string; t: number }[] } | null;
+}
+
+interface Stroke {
+  id: string;
+  c: string;
+  w: number;
+  pts: number[]; // x,y pairs on a 0-1000 square
+}
+
+interface Guess {
+  emoji: string;
+  name: string;
+  text: string; // "" for a correct guess, so the feed never shows the word
 }
 
 const MODS: Record<ModId, { label: string; emoji: string; desc: string; color: string }> = {
@@ -97,6 +113,34 @@ const MODS: Record<ModId, { label: string; emoji: string; desc: string; color: s
 };
 const QUIZ_MODS: ModId[] = ["vanilla", "double", "speed", "mines", "heist", "jackpot", "opposite", "wobbly", "blurry", "robin"];
 const VOTE_MODS: ModId[] = ["vanilla", "double", "speed", "contrarian", "wobbly", "robin"];
+const DRAW_MODS: ModId[] = ["vanilla", "double", "blurry", "wobbly"];
+const DRAW_MS = 60000;
+const MAX_INK = 30000; // numbers, roughly 15k points per drawing
+const INK_COLORS = ["#111111", "#ffffff", "#e53935", "#1e88e5", "#43a047", "#fdd835", "#fb8c00", "#8e24aa", "#6d4c41"];
+const WORDS = [
+  "cat", "dog", "pizza", "rocket", "banana", "unicorn", "snowman", "volcano", "octopus", "robot", "ghost", "dragon", "castle", "rainbow",
+  "guitar", "bicycle", "umbrella", "penguin", "giraffe", "spider", "cactus", "mermaid", "pirate", "tornado", "sandwich", "toilet",
+  "laptop", "coffee", "keyboard", "printer", "deadline", "meeting", "bug", "cloud", "rubber duck", "sticky note", "coffee machine",
+  "spaghetti", "hamburger", "ice cream", "popcorn", "birthday cake", "toothbrush", "lighthouse", "submarine", "helicopter", "skateboard",
+  "snail", "shark", "crab", "flamingo", "sloth", "zombie", "vampire", "wizard", "alien", "ninja", "astronaut", "dinosaur", "chicken",
+  "mustache", "glasses", "crown", "trophy", "fire", "lightning", "tree", "mushroom", "island", "pyramid", "moon", "sun", "eye", "nose",
+  "hot dog", "taco", "donut", "lemon", "carrot", "egg", "clock", "bomb", "key", "magnet", "anchor", "ladder", "kite", "tent", "bridge",
+];
+// Lowercase, no accents, no punctuation, no leading article: "The Rubber-Duck!" -> "rubber duck".
+const norm = (t: string) => t.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]+/g, " ").trim().replace(/^(a|an|the) /, "");
+function lev(a: string, b: string): number {
+  const d = Array.from({ length: b.length + 1 }, (_, j) => j);
+  for (let i = 1; i <= a.length; i++) {
+    let prev = d[0];
+    d[0] = i;
+    for (let j = 1; j <= b.length; j++) {
+      const t = d[j];
+      d[j] = Math.min(d[j] + 1, d[j - 1] + 1, prev + (a[i - 1] === b[j - 1] ? 0 : 1));
+      prev = t;
+    }
+  }
+  return d[b.length];
+}
 const PRANKS: PrankId[] = ["ice", "banana", "fog", "swap"];
 const FOG_MS = 6000;
 const isHostSeat = (p: Player) => p.id.startsWith("host-"); // the host's own seat answers on the big screen
@@ -142,6 +186,13 @@ function parseQuestions(text: string): Question[] {
   for (const line of lines) {
     if (!line || line.startsWith("#")) continue;
     const vote = line.match(/^vote:\s*(.+)$/i);
+    const draw = line.match(/^draw:\s*(.*)$/i);
+    if (draw) {
+      if (cur && cur.options.length >= 2 && cur.correct >= 0) out.push(cur);
+      cur = null;
+      out.push({ kind: "draw", text: draw[1].trim().slice(0, 30), options: [], correct: -1 });
+      continue;
+    }
     if (vote || line.startsWith("?")) {
       if (cur && cur.options.length >= 2 && cur.correct >= 0) out.push(cur);
       cur = null;
@@ -216,6 +267,7 @@ function similar(a: string, b: string): boolean {
 function dedupe(add: Question[], existing: string[]): Question[] {
   const seen = [...existing];
   return add.filter((q) => {
+    if (q.kind === "draw") return true;
     if (seen.some((t) => similar(t, q.text))) return false;
     seen.push(q.text);
     return true;
@@ -231,9 +283,11 @@ function playSet(builtin: Question[], trivia: Question[], asked: Set<string>): Q
   const extra = dedupe(trivia, [...asked, ...picked.map((q) => q.text)]).slice(0, 12);
   const quiz = extra.length >= 8 ? shuffle([...extra, ...picked]) : classics;
   const out: Question[] = [];
+  const draw: Question = { kind: "draw", text: "", options: [], correct: -1 };
   quiz.forEach((q, i) => {
     out.push(q);
     if (i % 4 === 3 && votes.length) out.push(votes.shift()!);
+    if (i === 5 || i === 10) out.push({ ...draw }); // two draw rounds per game
   });
   return [...out, ...votes];
 }
@@ -294,6 +348,13 @@ export class Room extends DurableObject<Env> {
   starting = false;
   asked = new Set<string>(); // question texts already played in this room, so reruns stay fresh
   voteIds: string[] = []; // player ids behind the current vote's options
+  drawerId = "";
+  strokes: Stroke[] = [];
+  inkSize = 0;
+  feed: Guess[] = [];
+  hintOrder: number[] = [];
+  hintLevel = 0;
+  hintTimers: ReturnType<typeof setTimeout>[] = [];
   robinUsed = false;
 
   async fetch(req: Request): Promise<Response> {
@@ -322,6 +383,7 @@ export class Room extends DurableObject<Env> {
       server.addEventListener("message", (e) => this.onHost(e.data));
       server.addEventListener("close", () => this.hosts.delete(server));
       this.send(server, this.hostView());
+      this.sendInk(server);
       return new Response(null, { status: 101, webSocket: client });
     }
 
@@ -343,7 +405,7 @@ export class Room extends DurableObject<Env> {
         emoji: pick(AVATARS.filter((a) => !used.has(a)).concat(used.size >= AVATARS.length ? AVATARS : [])),
         score: 0, streak: 0, answer: null, answeredAt: 0, perm: null,
         allInUsed: false, allInActive: false, prank: pick(PRANKS), frozenUntil: 0, frozenBy: "",
-        fogUntil: 0, fogBy: "", banana: false, swapPending: false, lastReact: 0, titles: [], stats: freshStats(),
+        fogUntil: 0, fogBy: "", banana: false, swapPending: false, lastReact: 0, lastGuess: 0, drawn: 0, titles: [], stats: freshStats(),
       };
       this.players.set(id, p);
     }
@@ -356,7 +418,22 @@ export class Room extends DurableObject<Env> {
       }
     });
     this.broadcast();
+    this.sendInk(server);
     return new Response(null, { status: 101, webSocket: client });
+  }
+
+  private drawing() {
+    return (this.phase === "question" || this.phase === "reveal") && this.cur?.kind === "draw";
+  }
+
+  private sendInk(ws: WebSocket) {
+    if (this.drawing()) this.send(ws, { t: "inkAll", qi: this.qi, strokes: this.strokes });
+  }
+
+  // Strokes go to every screen but the artist's own.
+  private toViewers(msg: unknown) {
+    this.toHosts(msg);
+    for (const p of this.players.values()) if (p.id !== this.drawerId) this.send(p.ws, msg);
   }
 
   private parse(data: unknown): Record<string, unknown> | null {
@@ -421,7 +498,7 @@ export class Room extends DurableObject<Env> {
       for (const ws of sockets) try { ws?.close(4005, "room closed"); } catch {}
     } else if (msg.t === "again" && this.phase === "end") {
       for (const p of this.players.values()) {
-        Object.assign(p, { score: 0, streak: 0, answer: null, allInUsed: false, allInActive: false, prank: pick(PRANKS), frozenUntil: 0, titles: [], stats: freshStats() });
+        Object.assign(p, { score: 0, streak: 0, answer: null, allInUsed: false, allInActive: false, prank: pick(PRANKS), frozenUntil: 0, drawn: 0, titles: [], stats: freshStats() });
       }
       this.phase = "lobby";
       this.qi = -1;
@@ -447,6 +524,50 @@ export class Room extends DurableObject<Env> {
         this.clearTimer();
         this.timer = setTimeout(() => this.doReveal(), 800);
       }
+    } else if (msg.t === "ink") {
+      if (this.phase !== "question" || this.cur?.kind !== "draw" || p.id !== this.drawerId || now < p.frozenUntil) return;
+      const id = String(msg.id ?? "").slice(0, 40);
+      const raw = Array.isArray(msg.pts) ? msg.pts.slice(0, 400) : [];
+      const pts = raw.map((v) => Math.max(0, Math.min(1000, Math.round(Number(v) || 0))));
+      if (!id || pts.length < 2 || this.inkSize + pts.length > MAX_INK) return;
+      this.inkSize += pts.length;
+      let st = this.strokes.find((x) => x.id === id);
+      if (!st) {
+        st = { id, c: INK_COLORS.includes(String(msg.c)) ? String(msg.c) : INK_COLORS[0], w: Math.max(4, Math.min(80, Number(msg.w) || 10)), pts: [] };
+        this.strokes.push(st);
+      }
+      st.pts.push(...pts);
+      this.toViewers({ t: "ink", id, c: st.c, w: st.w, pts });
+    } else if (msg.t === "inkClear") {
+      if (this.phase !== "question" || this.cur?.kind !== "draw" || p.id !== this.drawerId) return;
+      this.strokes = [];
+      this.toViewers({ t: "inkAll", qi: this.qi, strokes: [] });
+    } else if (msg.t === "guess") {
+      const q = this.cur;
+      if (this.phase !== "question" || q?.kind !== "draw" || p.id === this.drawerId || p.answer !== null || now < p.frozenUntil) return;
+      if (now - p.lastGuess < 500) return;
+      p.lastGuess = now;
+      const text = String(msg.text ?? "").trim().slice(0, 40);
+      const g = norm(text), word = norm(q.text);
+      if (!g) return;
+      if (g === word || g === word + "s" || g + "s" === word || g.replace(/ /g, "") === word.replace(/ /g, "")) {
+        p.answer = 0;
+        p.answeredAt = now - this.qStart;
+        this.feed.push({ emoji: p.emoji, name: p.name, text: "" });
+        this.event(`✅ ${p.name} got it!`);
+        this.broadcast();
+        const guessers = [...this.players.values()].filter((o) => o.ws && o.id !== this.drawerId);
+        if (guessers.every((o) => o.answer !== null)) {
+          this.clearTimer();
+          this.timer = setTimeout(() => this.doReveal(), 1200);
+        }
+      } else if (word.length >= 4 && lev(g, word) <= 1) {
+        this.send(p.ws, { t: "event", text: `🔥 "${text}" is SO close` });
+      } else {
+        this.feed.push({ emoji: p.emoji, name: p.name, text });
+        if (this.feed.length > 60) this.feed.shift();
+        this.broadcast();
+      }
     } else if (msg.t === "allin") {
       if (this.phase !== "question" || !this.settings.powerups || p.allInUsed || p.answer !== null) return;
       p.allInUsed = true;
@@ -457,12 +578,14 @@ export class Room extends DurableObject<Env> {
       if (this.phase !== "question" || !this.settings.powerups || !p.prank) return;
       const open = [...this.players.values()].filter((o) => o.id !== p.id && o.ws && o.answer === null);
       if (p.prank === "swap") {
+        if (this.cur?.kind === "draw") return this.send(p.ws, { t: "event", text: "Nothing to swap in a draw round. Keep it for later" });
         if (p.swapPending) return;
         p.swapPending = true;
         p.prank = null;
         this.event(`🔄 ${p.name} is planning a swap 👀`);
         return this.broadcast();
       }
+      if (p.prank === "banana" && this.cur?.kind === "draw") return this.send(p.ws, { t: "event", text: "No buttons to banana in a draw round. Keep it for later" });
       const target =
         p.prank === "ice" ? this.ranked().find((o) => open.includes(o) && o.frozenUntil < now)
         : p.prank === "banana" ? pick(open.filter((o) => !o.banana && !isHostSeat(o)))
@@ -511,12 +634,28 @@ export class Room extends DurableObject<Env> {
       if (ps.length < 2) return this.nextQuestion();
       this.voteIds = ps.map((p) => p.id);
       this.cur = { ...q, options: ps.map((p) => `${p.emoji} ${p.name}`) };
+    } else if (q.kind === "draw") {
+      // The artist is whoever has drawn least; the host's own seat would show the word on the big screen.
+      const artists = shuffle([...this.players.values()].filter((p) => p.ws && !isHostSeat(p))).sort((a, b) => a.drawn - b.drawn);
+      if (!artists.length || [...this.players.values()].filter((p) => p.ws).length < 2) return this.nextQuestion();
+      const drawer = artists[0];
+      drawer.drawn++;
+      this.drawerId = drawer.id;
+      const fresh = WORDS.filter((w) => !this.asked.has(w));
+      const word = q.text || pick(fresh.length ? fresh : WORDS);
+      this.asked.add(word);
+      this.cur = { ...q, text: word };
+      this.strokes = [];
+      this.inkSize = 0;
+      this.feed = [];
+      this.hintLevel = 0;
+      this.hintOrder = shuffle([...word].map((ch, i) => (ch === " " ? -1 : i)).filter((i) => i >= 0));
     } else {
       this.cur = q;
     }
     // Robin Hood is a once-a-game outrage, and only once there's something to steal.
     const robinOk = !this.robinUsed && this.players.size >= 3 && this.qi >= 3;
-    const pool = (q.kind === "quiz" ? QUIZ_MODS : VOTE_MODS).filter((m) => this.settings.mods.includes(m) && (m !== "robin" || robinOk));
+    const pool = (q.kind === "quiz" ? QUIZ_MODS : q.kind === "draw" ? DRAW_MODS : VOTE_MODS).filter((m) => this.settings.mods.includes(m) && (m !== "robin" || robinOk));
     this.modPool = pool.length ? pool : ["vanilla"];
     this.modIndex = Math.floor(Math.random() * this.modPool.length);
     this.mod = this.modPool[this.modIndex];
@@ -535,16 +674,28 @@ export class Room extends DurableObject<Env> {
 
   private startQuestion() {
     this.phase = "question";
-    this.qDuration = this.mod === "speed" ? speedMs(this.settings) : this.settings.seconds * 1000;
+    const draw = this.cur?.kind === "draw";
+    this.qDuration = draw ? DRAW_MS : this.mod === "speed" ? speedMs(this.settings) : this.settings.seconds * 1000;
     this.qStart = Date.now();
     this.broadcast();
     this.timer = setTimeout(() => this.doReveal(), this.qDuration + 300);
+    // Draw rounds give away a letter at half time and another at three quarters.
+    if (draw && this.hintOrder.length >= 3) {
+      for (const k of [0.5, 0.75]) this.hintTimers.push(setTimeout(() => { this.hintLevel++; this.broadcast(); }, this.qDuration * k));
+    }
+  }
+
+  private hint(): string {
+    const word = this.cur?.text ?? "";
+    const shown = new Set(this.hintOrder.slice(0, this.hintLevel));
+    return [...word].map((ch, i) => (ch === " " ? " " : shown.has(i) ? ch : "_")).join("");
   }
 
   private doReveal() {
     if (this.phase !== "question" || !this.cur) return;
     this.clearTimer();
     const q = this.cur;
+    if (q.kind === "draw") return this.revealDraw(q);
     const everyone = [...this.players.values()];
     const ranked = this.ranked();
     const rankBefore = Object.fromEntries(ranked.map((p) => [p.id, this.rankOf(p)]));
@@ -665,7 +816,48 @@ export class Room extends DurableObject<Env> {
     const roast = this.roastFor(q, counts, winners, results, frozen);
     for (const p of everyone) p.score += results[p.id].delta;
     const picks = Object.fromEntries(everyone.map((p) => [p.id, p.answer]));
-    this.reveal = { counts, winners, headline, results, rankBefore, picks, roast };
+    this.reveal = { counts, winners, headline, results, rankBefore, picks, roast, draw: null };
+    this.phase = "reveal";
+    this.broadcast();
+  }
+
+  private revealDraw(q: Question) {
+    const everyone = [...this.players.values()];
+    const rankBefore = Object.fromEntries(everyone.map((p) => [p.id, this.rankOf(p)]));
+    const drawer = this.players.get(this.drawerId);
+    const mult = this.mod === "double" ? 2 : 1;
+    const got = everyone.filter((p) => p.id !== this.drawerId && p.answer !== null).sort((a, b) => a.answeredAt - b.answeredAt);
+    const guessers = everyone.filter((p) => p.id !== this.drawerId);
+    const results: Record<string, Result> = {};
+    for (const p of everyone) {
+      const artist = p.id === this.drawerId;
+      const ok = artist ? got.length > 0 : p.answer !== null;
+      let delta = artist
+        ? 300 * got.length * mult
+        : ok ? Math.round(1000 * (1 - (0.5 * Math.min(p.answeredAt, this.qDuration)) / this.qDuration)) * mult : 0;
+      const notes = [artist ? (got.length ? `🎨 ${got.length} got your drawing` : "🎨 nobody got your drawing") : ok ? `🎨 got it in ${(p.answeredAt / 1000).toFixed(1)}s` : "🎨 no luck"];
+      if (ok && !artist) p.stats.slowestRight = Math.max(p.stats.slowestRight, p.answeredAt);
+      if (p.allInActive) {
+        if (ok) { delta *= 2; notes.push("🎲 all-in paid off"); }
+        else { delta -= 500; p.stats.allInLost += 500; notes.push("🎲 all-in busted"); }
+      }
+      results[p.id] = { delta, correct: artist ? null : ok, note: notes.join(" · ") };
+    }
+    const name = drawer?.name ?? "The artist";
+    const lines: string[] = [];
+    const wrong = this.feed.filter((g) => g.text);
+    if (wrong.length) lines.push(...[0, 1].map(() => { const g = pick(wrong); return `Best wrong guess: "${g.text}" (${g.name})`; }));
+    if (!got.length) lines.push(`Nobody got it. ${name} is an abstract artist now.`);
+    if (guessers.length >= 2 && got.length === guessers.length) lines.push(`Everyone got it. ${name}, quit your day job.`);
+    if (!this.strokes.length) lines.push(`${name} didn't draw a single line. Minimalism.`);
+    const roast = lines.length ? pick(lines) : "";
+    for (const p of everyone) p.score += results[p.id].delta;
+    this.reveal = {
+      counts: [], winners: [], results, rankBefore, roast,
+      headline: `🎨 It was "${q.text}" · ${got.length}/${guessers.length} got it`,
+      picks: Object.fromEntries(everyone.map((p) => [p.id, p.answer])),
+      draw: { word: q.text, drawerId: this.drawerId, got: got.map((p) => ({ id: p.id, t: p.answeredAt })) },
+    };
     this.phase = "reveal";
     this.broadcast();
   }
@@ -729,6 +921,8 @@ export class Room extends DurableObject<Env> {
   private clearTimer() {
     if (this.timer) clearTimeout(this.timer);
     this.timer = null;
+    for (const t of this.hintTimers) clearTimeout(t);
+    this.hintTimers = [];
   }
 
   private ranked(): Player[] {
@@ -774,7 +968,9 @@ export class Room extends DurableObject<Env> {
         connected: !!p.ws, answered: p.answer !== null, allIn: p.allInActive, rank: this.rankOf(p),
       })),
       // Answers and the queue only go out in gm mode, where the host isn't playing.
-      q: q ? { kind: q.kind, text: q.text, options: q.options, correct: gm ? q.correct : -1 } : null,
+      q: q ? { kind: q.kind, text: q.kind === "draw" && !gm && this.phase !== "reveal" ? "" : q.text, options: q.options, correct: gm ? q.correct : -1 } : null,
+      draw: this.drawView(),
+      feed: this.cur?.kind === "draw" ? this.feed.slice(-14) : [],
       settings: this.settings,
       allMods: (Object.keys(MODS) as ModId[]).map((id) => this.modInfo(id)),
       queue: gm ? this.questions.map((q, i) => ({ i, ...q })).slice(this.qi + 1) : [],
@@ -801,9 +997,22 @@ export class Room extends DurableObject<Env> {
       },
       awards: this.phase === "end" ? this.awards().filter((a) => a.id === p.id) : [],
       playerCount: this.players.size,
-      q: q && options.length ? { kind: q.kind, text: q.text, options } : null,
+      q: q && (options.length || (q.kind === "draw" && this.phase !== "spin"))
+        ? { kind: q.kind, text: q.kind === "draw" && p.id !== this.drawerId && p.answer === null && this.phase !== "reveal" ? "" : q.text, options }
+        : null,
+      draw: this.drawView(),
+      feed: this.cur?.kind === "draw" ? this.feed.slice(-6) : [],
       result: this.phase === "reveal" && r ? r.results[p.id] ?? null : null,
       winners: this.phase === "reveal" && r ? r.winners : [],
+    };
+  }
+
+  private drawView() {
+    if (this.cur?.kind !== "draw") return null;
+    const d = this.players.get(this.drawerId);
+    return {
+      drawerId: this.drawerId, drawerName: d?.name ?? "", drawerEmoji: d?.emoji ?? "🎨", hint: this.hint(),
+      got: [...this.players.values()].filter((p) => p.id !== this.drawerId && p.answer !== null).map((p) => p.id),
     };
   }
 

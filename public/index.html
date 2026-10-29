@@ -313,6 +313,33 @@ body.gm-host #cpbtn { display: block; }
 .award .who { font-weight: 800; font-size: 1.1rem; }
 .award small { color: var(--muted); }
 .phone .awards { width: 100%; }
+/* draw rounds */
+.inkwrap { background: #fff; border-radius: 16px; overflow: hidden; aspect-ratio: 1; width: 100%; box-shadow: 0 0 0 3px var(--line); }
+.inkwrap canvas { display: block; width: 100%; height: 100%; touch-action: none; }
+.fx-blurry canvas.ink { animation: unblur calc(var(--dur) * .6) linear var(--late) both; }
+.fx-wobbly .inkwrap { animation: drift3 2.7s ease-in-out var(--late) infinite; }
+.drawgrid { display: grid; grid-template-columns: min(66vh, 52vw) 1fr; gap: 28px; align-items: start; justify-content: center; }
+@media (max-width: 860px) { .drawgrid { grid-template-columns: 1fr; } }
+.drawside { display: grid; gap: 14px; align-content: start; }
+.dwho { font-size: 1.4rem; font-weight: 700; } .dwho b { color: var(--yellow); }
+.dhint { font-family: ui-monospace, monospace; font-weight: 800; font-size: clamp(1.6rem, 3vw, 2.6rem); letter-spacing: .35em; white-space: pre-wrap; }
+.feed { display: grid; gap: 6px; align-content: end; min-height: 200px; }
+.feed div { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 7px 12px; font-weight: 600; animation: pop .3s ease-out both; }
+.feed div.ok { background: #3ef08a22; border-color: var(--green); color: var(--green); font-weight: 800; }
+.feed small { color: var(--muted); font-weight: 600; margin-right: 6px; }
+.phone .feed { min-height: 0; font-size: .9rem; } .phone .feed div { padding: 4px 10px; }
+.phone .inkwrap { max-width: min(100%, 40vh); margin: 0 auto; }
+body.drawing #toasts { top: 12px; bottom: auto; } /* keep toasts off the palette and the guess box */
+.dword { text-align: center; font-size: 1.1rem; } .dword b { font-family: Bungee, sans-serif; font-size: 1.8rem; color: var(--yellow); display: block; }
+.tools { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; align-items: center; }
+.tools .sw { width: 34px; height: 34px; border-radius: 50%; border: 3px solid #0000; box-shadow: 0 0 0 1px #fff4; }
+.tools .sw.on { border-color: var(--yellow); }
+.tools .sz { background: var(--surface); border: 2px solid var(--line); border-radius: 10px; padding: 6px 10px; font-weight: 800; }
+.tools .sz.on { border-color: var(--yellow); }
+.gform { display: flex; gap: 8px; } .gform input { flex: 1; min-width: 0; } .gform button { padding: 0 18px; border-radius: 12px; background: var(--pink); font-weight: 800; }
+#mybar .gform input { padding: 8px 12px; width: 260px; }
+.reveal-draw { display: grid; grid-template-columns: min(56vh, 44vw) 1fr; gap: 24px; justify-content: center; }
+@media (max-width: 860px) { .reveal-draw { grid-template-columns: 1fr; } }
 .reacts button { font-size: 1.7rem; background: none; padding: 4px 6px; border-radius: 10px; }
 .reacts button:active { transform: scale(1.4); }
 </style>
@@ -425,6 +452,9 @@ Hindi
 *Mandarin Chinese
 
 vote: Who is the MVP of this sprint?
+
+# "draw:" = a random player draws, everyone else types guesses. Add a word after it, or leave it empty for a random one.
+draw:
 
 vote: Who is most likely to reply-all to the whole company?
 
@@ -596,7 +626,13 @@ function connect() {
   ws.onopen = () => { $("#conn").style.display = "none"; };
   ws.onmessage = (ev) => {
     const msg = JSON.parse(ev.data);
-    if (msg.t === "state") { offset = msg.now - Date.now(); state = msg; render(); }
+    if (msg.t === "state") {
+      offset = msg.now - Date.now();
+      if (msg.qi !== ink.qi) ink = { qi: msg.qi, strokes: [] };
+      state = msg;
+      render();
+    }
+    else if (msg.t === "ink" || msg.t === "inkAll") onInk(msg);
     else if (msg.t === "event") toast(msg.text);
     else if (msg.t === "react") floatReact(msg.e);
   };
@@ -684,6 +720,7 @@ function render() {
     renderMine();
   }
   if (fresh) setTimeout(() => app.classList.remove("fresh"), 1200);
+  document.body.classList.toggle("drawing", state.phase === "question" && state.q?.kind === "draw");
 }
 
 function wheelHTML(s) {
@@ -732,7 +769,91 @@ const PRANK_INFO = {
   fog: ["🌫️", "Fog", "smear someone's screen"],
   swap: ["🔄", "Swap", "trade answers at the reveal"],
 };
+/* ---------- draw rounds: one shared ink buffer, painted onto every canvas.ink ---------- */
+const INK_COLORS = ["#111111", "#ffffff", "#e53935", "#1e88e5", "#43a047", "#fdd835", "#fb8c00", "#8e24aa", "#6d4c41"];
+let ink = { qi: -1, strokes: [] }, inkQueued = false;
+const pad = { c: INK_COLORS[0], w: 10 };
+function onInk(msg) {
+  if (msg.t === "inkAll") ink = { qi: msg.qi, strokes: msg.strokes };
+  else {
+    let st = ink.strokes.find((x) => x.id === msg.id);
+    if (!st) ink.strokes.push((st = { id: msg.id, c: msg.c, w: msg.w, pts: [] }));
+    st.pts.push(...msg.pts);
+  }
+  paintSoon();
+}
+function paintSoon() {
+  if (inkQueued) return;
+  inkQueued = true;
+  requestAnimationFrame(() => { inkQueued = false; document.querySelectorAll("canvas.ink").forEach(paint); });
+}
+function paint(cv) {
+  const W = Math.round(cv.getBoundingClientRect().width * (devicePixelRatio || 1));
+  if (!W) return;
+  if (cv.width !== W) { cv.width = W; cv.height = W; }
+  const ctx = cv.getContext("2d");
+  ctx.fillStyle = "#fff"; ctx.fillRect(0, 0, W, W);
+  ctx.lineCap = "round"; ctx.lineJoin = "round";
+  for (const st of ink.strokes) {
+    ctx.strokeStyle = st.c; ctx.lineWidth = (st.w / 1000) * W;
+    ctx.beginPath();
+    for (let i = 0; i < st.pts.length; i += 2) {
+      const x = (st.pts[i] / 1000) * W, y = (st.pts[i + 1] / 1000) * W;
+      if (i) ctx.lineTo(x, y); else { ctx.moveTo(x, y); ctx.lineTo(x + 0.01, y); }
+    }
+    ctx.stroke();
+  }
+}
+// The artist's pad: draws locally right away and streams points in small batches.
+function mountPad(cv) {
+  let cur = null, buf = [], timer = 0;
+  const flush = () => { if (cur && buf.length) sendMsg({ t: "ink", id: cur.id, c: cur.c, w: cur.w, pts: buf }); buf = []; };
+  const add = (e) => {
+    const r = cv.getBoundingClientRect();
+    const x = Math.round(((e.clientX - r.left) / r.width) * 1000), y = Math.round(((e.clientY - r.top) / r.height) * 1000);
+    cur.pts.push(x, y); buf.push(x, y);
+    paintSoon();
+  };
+  cv.onpointerdown = (e) => {
+    if (serverNow() < state.me.frozenUntil) return;
+    e.preventDefault();
+    cv.setPointerCapture?.(e.pointerId);
+    cur = { id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6), c: pad.c, w: pad.w, pts: [] };
+    ink.strokes.push(cur);
+    add(e);
+    timer = setInterval(flush, 60);
+  };
+  cv.onpointermove = (e) => { if (cur) add(e); };
+  cv.onpointerup = cv.onpointercancel = () => { flush(); clearInterval(timer); cur = null; };
+}
+const feedHTML = (feed) => feed.map((g) => g.text
+  ? `<div><small>${g.emoji} ${esc(g.name)}</small>${esc(g.text)}</div>`
+  : `<div class="ok">✅ ${g.emoji} ${esc(g.name)} got it!</div>`).join("");
+const sendGuess = (input, send) => {
+  const text = input.value.trim();
+  if (!text) return;
+  send({ t: "guess", text });
+  input.value = "";
+};
+
 const qcount = (s) => `<span class="qcount"><b>Question ${s.qi + 1}</b> of ${s.total}</span>`;
+
+function boardHTML(s, r) {
+  return `<div class="board">
+            <div class="board-title">Leaderboard</div>
+            ${s.players.slice(0, 8).map((p) => {
+              const res = r.results[p.id] || { delta: 0, note: "" };
+              const before = r.rankBefore[p.id], moved = before ? before - p.rank : 0;
+              const note = res.note || (r.picks[p.id] == null ? "no answer" : "");
+              return `<div class="brow pop">
+                <span class="rk">${["🥇", "🥈", "🥉"][p.rank - 1] || p.rank}</span><span class="av">${p.emoji}</span>
+                <span class="nm">${esc(p.name)} ${p.streak >= 3 ? "🔥" : ""} ${moved > 0 ? `<span class="up">▲${moved}</span>` : moved < 0 ? `<span class="down">▼${-moved}</span>` : ""}${note ? `<span class="nt">${esc(note)}</span>` : ""}</span>
+                <span class="delta ${res.delta > 0 ? "up" : res.delta < 0 ? "down" : "zero"}">${res.delta > 0 ? "+" : ""}${res.delta}</span>
+                <span class="sc" data-from="${p.score - res.delta}" data-to="${p.score}">${p.score - res.delta}</span>
+              </div>`;
+            }).join("")}
+          </div>`;
+}
 
 function renderHost(fresh) {
   const s = state;
@@ -845,10 +966,39 @@ function renderHost(fresh) {
     if (!fresh) return;
     app.innerHTML = `
       <div class="host">
-        <div class="topbar">${qcount(s)}<span class="muted">${s.q.kind === "vote" ? "🗳️ Team vote" : "🧠 Quiz"}</span></div>
+        <div class="topbar">${qcount(s)}<span class="muted">${{ vote: "🗳️ Team vote", draw: "🎨 Draw round" }[s.q.kind] || "🧠 Quiz"}</span></div>
         ${wheelHTML(s)}
       </div>`;
     spinWheel(s);
+    return;
+  }
+
+  if (s.phase === "question" && s.q.kind === "draw") {
+    const d = s.draw;
+    if (fresh || !$("#drawhost")) {
+      app.innerHTML = `
+        <div class="host" id="drawhost">
+          <div class="topbar">${qcount(s)}${modBadge(s.mod)}</div>
+          <div class="drawgrid">
+            <div ${fxAttrs(s)}><div class="inkwrap"><canvas class="ink"></canvas></div></div>
+            <div class="drawside">
+              <div class="dwho">🎨 <b>${d.drawerEmoji} ${esc(d.drawerName)}</b> is drawing</div>
+              <div class="dhint" id="hhint"></div>
+              <div class="timer"><div class="timer-fill"></div><span class="timer-num"></span></div>
+              <div class="feed" id="hfeed"></div>
+              <div class="live" id="live"></div>
+            </div>
+          </div>
+          <div class="host-foot"><button class="ghost" id="skip">Reveal now ⏭</button></div>
+        </div>`;
+      $("#skip").onclick = () => sendMsg({ t: "skip" });
+      paintSoon();
+    }
+    $("#hhint").textContent = d.hint;
+    $("#hfeed").innerHTML = feedHTML(s.feed);
+    const guessers = s.players.filter((p) => p.connected && p.id !== d.drawerId);
+    $("#live").innerHTML = `<span class="count">${d.got.length}/${guessers.length}</span><span class="muted">got it</span>` +
+      s.players.filter((p) => d.got.includes(p.id)).map((p) => `<span class="in" title="${esc(p.name)}">${p.emoji}</span>`).join("");
     return;
   }
 
@@ -882,6 +1032,27 @@ function renderHost(fresh) {
     return;
   }
 
+  if (s.phase === "reveal" && s.q.kind === "draw") {
+    if (!fresh) return;
+    const r = s.reveal, last = s.qi + 1 >= s.total;
+    app.innerHTML = `
+      <div class="host">
+        <div class="topbar">${qcount(s)}${modBadge(s.mod)}</div>
+        <div class="verdict pop"><span class="pill" style="--c:var(--pink)"><small>🎨 The word</small>${esc(r.draw.word)}</span><span>${esc(r.headline.replace(/^.*· /, ""))}</span></div>
+        ${r.roast ? `<p class="roast pop">${esc(r.roast)}</p>` : ""}
+        <div class="reveal-draw">
+          <div class="inkwrap pop"><canvas class="ink"></canvas></div>
+          ${boardHTML(s, r)}
+        </div>
+        <div class="host-foot"><button class="big" id="next">${last ? "Final results 🏆" : "Next ▶"}</button></div>
+      </div>`;
+    paintSoon();
+    sfx.reveal();
+    setTimeout(() => document.querySelectorAll(".sc").forEach((el) => countUp(el, +el.dataset.from, +el.dataset.to)), 700);
+    $("#next").onclick = () => sendMsg({ t: "next" });
+    return;
+  }
+
   if (s.phase === "reveal") {
     if (!fresh) return;
     const r = s.reveal;
@@ -908,20 +1079,7 @@ function renderHost(fresh) {
               </div>`;
             }).join("")}
           </div>
-          <div class="board">
-            <div class="board-title">Leaderboard</div>
-            ${s.players.slice(0, 8).map((p) => {
-              const res = r.results[p.id] || { delta: 0, note: "" };
-              const before = r.rankBefore[p.id], moved = before ? before - p.rank : 0;
-              const note = res.note || (r.picks[p.id] == null ? "no answer" : "");
-              return `<div class="brow pop">
-                <span class="rk">${["🥇", "🥈", "🥉"][p.rank - 1] || p.rank}</span><span class="av">${p.emoji}</span>
-                <span class="nm">${esc(p.name)} ${p.streak >= 3 ? "🔥" : ""} ${moved > 0 ? `<span class="up">▲${moved}</span>` : moved < 0 ? `<span class="down">▼${-moved}</span>` : ""}${note ? `<span class="nt">${esc(note)}</span>` : ""}</span>
-                <span class="delta ${res.delta > 0 ? "up" : res.delta < 0 ? "down" : "zero"}">${res.delta > 0 ? "+" : ""}${res.delta}</span>
-                <span class="sc" data-from="${p.score - res.delta}" data-to="${p.score}">${p.score - res.delta}</span>
-              </div>`;
-            }).join("")}
-          </div>
+          ${boardHTML(s, r)}
         </div>
         <div class="host-foot"><button class="big" id="next">${last ? "Final results 🏆" : "Next ▶"}</button></div>
       </div>`;
@@ -971,9 +1129,75 @@ function renderHost(fresh) {
   }
 }
 
+function powersHTML(s, answered) {
+  const me = s.me, pr = PRANK_INFO[me.prank];
+  return !s.powerups ? "" : `<div class="powers">
+    <button class="power ${me.allInActive ? "on" : ""}" id="allin" ${me.allInUsed || answered ? "disabled" : ""}>🎲 ${me.allInActive ? "ALL-IN!" : "All-in"}<br><small class="muted">2× or −500</small></button>
+    ${me.swapPending
+      ? `<button class="power on" disabled>🔄 Swap armed<br><small class="muted">happens at the reveal</small></button>`
+      : `<button class="power" id="prank" ${pr ? "" : "disabled"}>${pr ? `${pr[0]} ${pr[1]}<br><small class="muted">${pr[2]}</small>` : `🃏 No prank<br><small class="muted">refill soon</small>`}</button>`}
+  </div>`;
+}
+const overlaysHTML = (me) =>
+  (serverNow() < me.fogUntil ? `<div class="fog"><span>🌫️ ${esc(me.fogBy)} fogged your screen</span></div>` : "") +
+  (serverNow() < me.frozenUntil ? `<div class="frozen"><div class="huge">🧊</div><div>FROZEN by ${esc(me.frozenBy)}</div><div class="secs" id="fsecs"></div></div>` : "");
+function bindPowers() {
+  const a = $("#allin"), pr = $("#prank");
+  if (a) a.onclick = () => sendMsg({ t: "allin" });
+  if (pr) pr.onclick = () => sendMsg({ t: "prank" });
+}
+const meHead = (s) => `<div class="me"><span class="av">${s.me.emoji}</span>${esc(s.me.name)}${s.phase !== "lobby" ? `<span class="rank">#${s.me.rank} of ${s.playerCount}</span>` : ""}<span class="sc">${s.me.score}</span></div>`;
+
+// Built once per draw round and then patched, so the pad and the guess box survive every state update.
+function renderDrawPlayer() {
+  const s = state, me = s.me, d = s.draw, artist = me.id === d.drawerId;
+  if (!$("#drawroot") || +$("#drawroot").dataset.qi !== s.qi) {
+    app.innerHTML = `<div class="phone" id="drawroot" data-qi="${s.qi}">
+      <div id="dhead"></div>
+      ${modBadge(s.mod)}
+      ${artist
+        ? `<div class="dword">✏️ Draw this, no letters:<b>${esc(s.q.text)}</b><small class="muted">only you can see it</small></div>`
+        : `<div class="dwho" style="text-align:center">🎨 ${d.drawerEmoji} <b>${esc(d.drawerName)}</b> is drawing</div><div class="dhint" id="dhint" style="text-align:center"></div>`}
+      <div class="timer"><div class="timer-fill"></div><span class="timer-num"></span></div>
+      ${artist ? `<div class="inkwrap"><canvas class="ink" id="pad"></canvas></div>` : `<div ${fxAttrs(s)}><div class="inkwrap"><canvas class="ink"></canvas></div></div>`}
+      ${artist
+        ? `<div class="tools">${INK_COLORS.map((c) => `<button class="sw" data-c="${c}" style="background:${c}" title="${c === "#ffffff" ? "Eraser" : "Colour"}"></button>`).join("")}
+            <button class="sz" data-w="10">thin</button><button class="sz" data-w="28">thick</button><button class="sz" id="clear">🗑️ clear</button></div>`
+        : `<div id="gbox"></div><div class="feed" id="dfeed"></div>`}
+      <div id="dpowers"></div>
+      <div id="doverlay"></div>
+    </div>`;
+    if (artist) {
+      mountPad($("#pad"));
+      const tools = () => document.querySelectorAll(".tools [data-c], .tools [data-w]").forEach((b) => b.classList.toggle("on", b.dataset.c === pad.c || +b.dataset.w === pad.w));
+      document.querySelectorAll(".tools [data-c]").forEach((b) => (b.onclick = () => { pad.c = b.dataset.c; tools(); }));
+      document.querySelectorAll(".tools [data-w]").forEach((b) => (b.onclick = () => { pad.w = +b.dataset.w; tools(); }));
+      $("#clear").onclick = () => { ink.strokes = []; paintSoon(); sendMsg({ t: "inkClear" }); };
+      tools();
+    }
+    paintSoon();
+  }
+  $("#dhead").innerHTML = meHead(s);
+  if (!artist) {
+    $("#dhint").textContent = s.q.text || d.hint;
+    const got = me.answer !== null, frozen = serverNow() < me.frozenUntil;
+    if (got) $("#gbox").innerHTML = `<h2 class="display up" style="text-align:center;margin:0">✅ Got it!</h2>`;
+    else if (!$("#ginput")) {
+      $("#gbox").innerHTML = `<form class="gform" id="gform"><input id="ginput" maxlength="40" autocomplete="off" autocapitalize="off" placeholder="Type your guess…"><button>Guess</button></form>`;
+      $("#gform").onsubmit = (e) => { e.preventDefault(); sendGuess($("#ginput"), sendMsg); };
+    }
+    if ($("#ginput")) $("#ginput").disabled = frozen;
+    $("#dfeed").innerHTML = feedHTML(s.feed);
+  }
+  $("#dpowers").innerHTML = powersHTML(s, me.answer !== null);
+  bindPowers();
+  $("#doverlay").innerHTML = overlaysHTML(me);
+}
+
 function renderPlayer(fresh) {
   const s = state, me = s.me;
   if (s.phase === "spin" && !fresh) return;
+  if (s.phase === "question" && s.q?.kind === "draw") return renderDrawPlayer();
   const head = `<div class="me"><span class="av">${me.emoji}</span>${esc(me.name)}${s.phase !== "lobby" ? `<span class="rank">#${me.rank} of ${s.playerCount}</span>` : ""}<span class="sc">${me.score}</span></div>`;
   const reacts = `<div class="reacts">${REACTIONS.map((e) => `<button data-e="${e}">${e}</button>`).join("")}</div>`;
   let body = "";
@@ -989,7 +1213,6 @@ function renderPlayer(fresh) {
     const pickedText = answered ? s.q.options.find((o) => o.i === me.answer)?.text : "";
     // Banana'd buttons colour by position, so they stop matching the big screen.
     const byPos = me.banana;
-    const pr = PRANK_INFO[me.prank];
     body = `
       ${modBadge(s.mod)}
       <div ${fxAttrs(s)}><h2 class="qtext">${esc(s.q.text)}</h2></div>
@@ -999,21 +1222,17 @@ function renderPlayer(fresh) {
         : `<div ${fxAttrs(s)}><div class="answers ${s.q.options.length > 4 ? "many" : ""}">
             ${s.q.options.map((o, pos) => `<button class="answer ${fresh ? "pop" : ""}" data-i="${o.i}" style="${tileStyle(byPos ? pos : o.i)}"><span>${SHAPES[(byPos ? pos : o.i) % SHAPES.length]}</span><span class="otext">${esc(o.text)}</span>${pos < 9 ? `<kbd>${pos + 1}</kbd>` : ""}</button>`).join("")}
           </div></div>`}
-      ${!s.powerups ? "" : `<div class="powers">
-        <button class="power ${me.allInActive ? "on" : ""}" id="allin" ${me.allInUsed || answered ? "disabled" : ""}>🎲 ${me.allInActive ? "ALL-IN!" : "All-in"}<br><small class="muted">2× or −500</small></button>
-        ${me.swapPending
-          ? `<button class="power on" disabled>🔄 Swap armed<br><small class="muted">happens at the reveal</small></button>`
-          : `<button class="power" id="prank" ${pr ? "" : "disabled"}>${pr ? `${pr[0]} ${pr[1]}<br><small class="muted">${pr[2]}</small>` : `🃏 No prank<br><small class="muted">refill soon</small>`}</button>`}
-      </div>`}
-      ${serverNow() < me.fogUntil ? `<div class="fog"><span>🌫️ ${esc(me.fogBy)} fogged your screen</span></div>` : ""}
-      ${serverNow() < me.frozenUntil ? `<div class="frozen"><div class="huge">🧊</div><div>FROZEN by ${esc(me.frozenBy)}</div><div class="secs" id="fsecs"></div></div>` : ""}`;
+      ${powersHTML(s, answered)}
+      ${overlaysHTML(me)}`;
   } else if (s.phase === "reveal") {
     const r = s.result || { delta: 0, correct: null, note: "" };
-    const icon = r.correct === true ? "✅" : r.correct === false ? "❌" : r.delta > 0 ? "🗳️" : "😶";
+    const draw = s.q?.kind === "draw";
+    const icon = r.correct === true ? "✅" : r.correct === false ? "❌" : draw ? "🎨" : r.delta > 0 ? "🗳️" : "😶";
     body = `<div class="center">
       <div class="huge pop">${icon}</div>
       <div class="result-delta pop ${r.delta > 0 ? "up" : r.delta < 0 ? "down" : "muted"}">${r.delta > 0 ? "+" : ""}${r.delta}</div>
       ${r.note ? `<p><b>${esc(r.note)}</b></p>` : ""}
+      ${draw ? `<div class="dword"><span class="muted">The word was</span><b>${esc(s.q.text)}</b></div>` : ""}
       ${s.q && s.winners.length ? `
         <div class="muted">${s.q.kind === "vote" ? "The team picked" : "Correct answer"}</div>
         ${s.q.options.map((o, pos) => s.winners.includes(o.i) ? `<div class="answer correct-card pop" style="${tileStyle(me.banana ? pos : o.i)}"><span>${SHAPES[(me.banana ? pos : o.i) % SHAPES.length]}</span>${esc(o.text)}</div>` : "").join("")}
@@ -1030,8 +1249,7 @@ function renderPlayer(fresh) {
   app.innerHTML = `<div class="phone">${head}${body}</div>${reacts}`;
   document.querySelectorAll(".answer").forEach((b) => (b.onclick = () => { navigator.vibrate?.(30); sendMsg({ t: "answer", i: +b.dataset.i }); }));
   document.querySelectorAll(".reacts button").forEach((b) => (b.onclick = () => sendMsg({ t: "react", e: b.dataset.e })));
-  $("#allin") && ($("#allin").onclick = () => sendMsg({ t: "allin" }));
-  $("#prank") && ($("#prank").onclick = () => sendMsg({ t: "prank" }));
+  bindPowers();
   if ($(".frozen")) navigator.vibrate?.([80, 40, 80]);
   if (s.phase === "spin") spinWheel(s);
   if (s.phase === "reveal" && fresh) navigator.vibrate?.(s.result?.delta > 0 ? 60 : [40, 60, 40]);
@@ -1083,6 +1301,7 @@ function similar(a, b) {
 function dedupe(add, existing) {
   const seen = existing.filter((t) => t.trim());
   return add.filter((q) => {
+    if (q.kind === "draw") return true;
     if (seen.some((t) => similar(t, q.text))) return false;
     seen.push(q.text);
     return true;
@@ -1090,7 +1309,7 @@ function dedupe(add, existing) {
 }
 const addedMsg = (n, skipped) => `➕ ${n} question${n === 1 ? "" : "s"} added${skipped ? ` (${skipped} duplicate${skipped > 1 ? "s" : ""} skipped)` : ""}`;
 const blankQ = (kind = "quiz") => ({ kind, text: "", options: ["", "", "", ""], correct: 0 });
-const qValid = (q) => !!q.text.trim() && (q.kind === "vote" || (q.options.filter((o) => o.trim()).length >= 2 && !!q.options[q.correct]?.trim()));
+const qValid = (q) => q.kind === "draw" || (!!q.text.trim() && (q.kind === "vote" || (q.options.filter((o) => o.trim()).length >= 2 && !!q.options[q.correct]?.trim())));
 
 // Same text format the server reads: "? question", answer lines with * on the right one, "vote: prompt".
 function parseQs(text) {
@@ -1101,6 +1320,8 @@ function parseQs(text) {
     if (!line || line.startsWith("#")) continue;
     const vote = line.match(/^vote:\s*(.+)$/i);
     if (vote) { cur = null; out.push({ ...blankQ("vote"), text: vote[1] }); continue; }
+    const draw = line.match(/^draw:\s*(.*)$/i);
+    if (draw) { cur = null; out.push({ ...blankQ("draw"), text: draw[1].trim() }); continue; }
     if (line.startsWith("?")) { cur = { kind: "quiz", text: line.slice(1).trim(), options: [], correct: -1 }; out.push(cur); continue; }
     if (cur && cur.options.length < 4) {
       if (line.startsWith("*")) cur.correct = cur.options.length;
@@ -1115,7 +1336,7 @@ function parseQs(text) {
 }
 function serializeQs(model) {
   const clean = (t) => t.trim().replace(/^[?*#]+\s*/, "");
-  return model.filter(qValid).map((q) => q.kind === "vote"
+  return model.filter(qValid).map((q) => q.kind === "draw" ? `draw: ${q.text.trim()}` : q.kind === "vote"
     ? `vote: ${q.text.trim()}`
     : [`? ${q.text.trim()}`, ...q.options.map((o, i) => [clean(o), i]).filter(([o]) => o).map(([o, i]) => (i === q.correct ? "*" : "") + o)].join("\n")
   ).join("\n\n");
@@ -1125,12 +1346,12 @@ function qcardHTML(q, n) {
   return `<div class="qcard ${qValid(q) ? "" : "bad"}" data-n="${n}">
     <div class="qhead">
       <span class="qnum">${n + 1}</span>
-      <div class="seg2"><button data-kind="quiz" class="${q.kind === "quiz" ? "on" : ""}">🧠 Quiz</button><button data-kind="vote" class="${q.kind === "vote" ? "on" : ""}">🗳️ Vote</button></div>
+      <div class="seg2"><button data-kind="quiz" class="${q.kind === "quiz" ? "on" : ""}">🧠 Quiz</button><button data-kind="vote" class="${q.kind === "vote" ? "on" : ""}">🗳️ Vote</button><button data-kind="draw" class="${q.kind === "draw" ? "on" : ""}">🎨 Draw</button></div>
       <span class="grow"></span>
       <button class="icon" data-act="up" title="Move up">↑</button><button class="icon" data-act="down" title="Move down">↓</button><button class="icon" data-act="del" title="Delete">✕</button>
     </div>
-    <input data-f="text" maxlength="200" placeholder="${q.kind === "vote" ? "Who is most likely to…" : "Your question"}" value="${esc(q.text)}">
-    ${q.kind === "vote"
+    <input data-f="text" maxlength="${q.kind === "draw" ? 30 : 200}" placeholder="${{ vote: "Who is most likely to…", draw: "Word to draw (empty = random)" }[q.kind] || "Your question"}" value="${esc(q.text)}">
+    ${q.kind === "draw" ? `<span class="muted" style="font-size:.85rem">A random player draws it on their phone, everyone else types guesses.</span>` : q.kind === "vote"
       ? `<span class="muted" style="font-size:.85rem">Everyone votes for a teammate. The majority pick scores.</span>`
       : `<div class="opts">${q.options.map((o, i) => `<div class="optrow" style="--c:${COLORS[i]}"><button class="mark ${i === q.correct ? "on" : ""}" data-correct="${i}" title="Mark as the right answer">${i === q.correct ? "✔" : SHAPES[i]}</button><input data-opt="${i}" maxlength="80" placeholder="${i < 2 ? "Answer" : "Answer (optional)"}" value="${esc(o)}"></div>`).join("")}</div>`}
     <div class="bad-msg">${q.kind === "vote" ? "Needs a prompt" : "Needs a question, 2+ answers and a ✔ on a filled one"}</div>
@@ -1141,7 +1362,7 @@ function qcardHTML(q, n) {
 function mountEditor(root, model, onChange) {
   const draw = () => {
     root.innerHTML = `<div class="qlist">${model.map(qcardHTML).join("")}</div>
-      <div class="qtools"><button class="ghost" data-add="quiz">+ Quiz question</button><button class="ghost" data-add="vote">+ Team vote</button></div>`;
+      <div class="qtools"><button class="ghost" data-add="quiz">+ Quiz question</button><button class="ghost" data-add="vote">+ Team vote</button><button class="ghost" data-add="draw">+ Draw round</button></div>`;
   };
   root.oninput = (e) => {
     const card = e.target.closest(".qcard");
@@ -1249,6 +1470,27 @@ function renderMine() {
   const who = `<span class="who">${me.emoji} ${esc(me.name)} · ${me.score}</span>`;
   mineFrozen = s.phase === "question" && serverNow() < me.frozenUntil;
   let html = who;
+  if (s.phase === "question" && s.q?.kind === "draw") {
+    // Patched in place so typing a guess survives state updates.
+    if (+bar.dataset.qi !== s.qi || !$("#mstat")) {
+      bar.dataset.qi = s.qi;
+      bar.innerHTML = `<span class="who" id="mwho"></span><span id="mstat"></span><span id="mpow"></span>`;
+    }
+    const got = me.answer !== null;
+    $("#mwho").textContent = `${me.emoji} ${me.name} · ${me.score}`;
+    if (got) $("#mstat").innerHTML = `<span class="display up">✅ Got it: ${esc(s.q.text)}</span>`;
+    else if (mineFrozen) $("#mstat").innerHTML = `<span class="frz">🧊 Frozen by ${esc(me.frozenBy)}</span>`;
+    else if (!$("#minput")) {
+      $("#mstat").innerHTML = `<form class="gform" id="mform"><input id="minput" maxlength="40" autocomplete="off" placeholder="Your guess…"><button>Guess</button></form>`;
+      $("#mform").onsubmit = (e) => { e.preventDefault(); sendGuess($("#minput"), sendMine); };
+    }
+    $("#mpow").innerHTML = s.powerups ? `<button class="power ${me.allInActive ? "on" : ""}" data-p="allin" ${me.allInUsed || got ? "disabled" : ""}>🎲 ${me.allInActive ? "ALL-IN!" : "All-in"}</button>
+      <button class="power" data-p="prank" ${me.prank ? "" : "disabled"}>${me.prank ? PRANK_INFO[me.prank].slice(0, 2).join(" ") : "🃏 No prank"}</button>` : "";
+    $("#mpow").querySelectorAll("[data-p]").forEach((b) => (b.onclick = () => sendMine({ t: b.dataset.p })));
+    document.body.classList.add("locked");
+    return;
+  }
+  bar.dataset.qi = "";
   if (s.phase === "question" && s.q) {
     const answered = me.answer !== null;
     if (mineFrozen) html += `<span class="frz">🧊 Frozen by ${esc(me.frozenBy)}</span>`;
@@ -1311,7 +1553,8 @@ function renderPanel() {
   if (s.q && s.phase !== "end") {
     const done = s.players.filter((p) => p.answered).length, live = s.players.filter((p) => p.connected).length;
     now += `<p><b>${esc(s.q.text)}</b> <span class="muted">· ${s.mod.emoji} ${esc(s.mod.label)}</span></p>` +
-      (s.q.kind === "quiz" ? s.q.options.map((o, i) => `<div class="opt ${i === s.q.correct ? "right" : ""}">${i === s.q.correct ? "✔" : "·"} ${esc(o)}</div>`).join("") : `<p class="muted">Team vote</p>`) +
+      (s.q.kind === "quiz" ? s.q.options.map((o, i) => `<div class="opt ${i === s.q.correct ? "right" : ""}">${i === s.q.correct ? "✔" : "·"} ${esc(o)}</div>`).join("")
+        : s.q.kind === "draw" ? `<p class="muted">🎨 Draw round · ${esc(s.draw?.drawerName ?? "")} is drawing</p>` : `<p class="muted">Team vote</p>`) +
       (s.phase === "question" ? `<p class="muted">${done}/${live} locked in</p>` : "");
   }
   $("#pnow").innerHTML = now;
@@ -1331,7 +1574,7 @@ function renderPanel() {
   if (!ps.contains(document.activeElement)) ps.innerHTML = settingsHTML(s.settings, s.allMods);
   $("#pqn").textContent = s.queue.length;
   $("#pqueue").innerHTML = s.queue.length
-    ? s.queue.map((q) => `<div class="qrow"><div>${q.kind === "vote" ? "🗳️" : "🧠"} ${esc(q.text)}${q.kind === "quiz" ? `<br><small>✔ ${esc(q.options[q.correct])}</small>` : ""}</div><button class="ghost" data-rm="${q.i}">✕</button></div>`).join("")
+    ? s.queue.map((q) => `<div class="qrow"><div>${{ vote: "🗳️", draw: "🎨" }[q.kind] || "🧠"} ${q.kind === "draw" ? `Draw round${q.text ? `: ${esc(q.text)}` : " (random word)"}` : esc(q.text)}${q.kind === "quiz" ? `<br><small>✔ ${esc(q.options[q.correct])}</small>` : ""}</div><button class="ghost" data-rm="${q.i}">✕</button></div>`).join("")
     : `<p class="muted">${s.phase === "lobby" ? "Questions are set in the lobby on the main screen." : "Nothing queued. Add some below, or the game ends after this one."}</p>`;
   $("#pqueue").querySelectorAll("[data-rm]").forEach((b) => (b.onclick = () => sendMsg({ t: "queueRemove", i: +b.dataset.rm })));
   $("#paddbtn").disabled = s.phase === "lobby" || s.phase === "end";
