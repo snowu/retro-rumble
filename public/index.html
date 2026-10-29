@@ -275,6 +275,24 @@ body.gm-host #cpbtn { display: block; }
 .credit a { color: var(--muted); }
 .rawtext textarea { min-height: 140px; margin-top: 8px; font-family: ui-monospace, monospace; font-size: .85rem; }
 .reacts { position: fixed; bottom: 0; left: 0; right: 0; display: flex; justify-content: center; gap: 4px; padding: 10px 10px calc(10px + env(safe-area-inset-bottom)); background: #0d0820ee; border-top: 2px solid var(--line); z-index: 12; }
+.me .rank { color: var(--muted); font-weight: 600; font-size: .9rem; }
+.answer kbd { display: none; margin-left: auto; font: 700 .85rem Inter, sans-serif; background: #0003; border: 1px solid #fff4; border-radius: 6px; padding: 2px 8px; }
+/* desktop players: a roomier controller instead of a stretched phone */
+@media (min-width: 760px) {
+  .phone { max-width: 900px; padding: 28px 32px 120px; gap: 18px; }
+  .me { background: var(--surface); border: 1px solid var(--border); border-radius: 16px; padding: 10px 16px; }
+  .me .av { font-size: 2rem; }
+  .me .sc { font-size: 1.3rem; background: #ffd23f1a; border-radius: 999px; padding: 4px 14px; }
+  .phone .qtext { font-size: clamp(1.6rem, 2.6vw, 2.2rem); margin: 8px 0; }
+  .phone .modbadge { align-self: center; }
+  .answers, .answers.many { grid-template-columns: 1fr 1fr; gap: 14px; }
+  .answer { min-height: 96px; font-size: 1.3rem; padding: 20px 22px; border-radius: 18px; transition: transform .1s, filter .1s; }
+  .answer:hover { transform: translateY(-2px); filter: brightness(1.1); }
+  .powers { max-width: 560px; width: 100%; align-self: center; }
+  .phone .center { flex: none; align-self: center; width: min(100%, 560px); margin-top: 6vh; background: var(--surface); border: 1px solid var(--border); border-radius: 24px; padding: 36px 32px; }
+  .reacts { left: 50%; right: auto; bottom: 16px; transform: translateX(-50%); border: 1px solid var(--border); border-radius: 999px; padding: 6px 12px; background: var(--surface); }
+}
+@media (min-width: 760px) and (hover: hover) { .answer kbd { display: inline-block; } }
 .reacts button { font-size: 1.7rem; background: none; padding: 4px 6px; border-radius: 10px; }
 .reacts button:active { transform: scale(1.4); }
 </style>
@@ -286,6 +304,7 @@ body.gm-host #cpbtn { display: block; }
 <div id="mybar"></div>
 <div id="hosttools">
   <button id="mutebtn" title="Sound on/off"></button>
+  <button data-invite title="Copy the join link">🔗 Invite</button>
   <button id="cpbtn">🎛️ Control panel</button>
   <button class="danger" data-close-room>✕ Close room</button>
 </div>
@@ -670,7 +689,7 @@ function renderHost(fresh) {
   const s = state;
   if (s.phase === "lobby") {
     if (fresh) {
-      const joinUrl = `${location.origin}${location.pathname}?room=${s.code}`;
+      const joinUrl = inviteUrl();
       let settings = s.settings;
       try { settings = { ...settings, ...JSON.parse(store.get("rr-settings") || "{}") }; } catch {}
       app.innerHTML = `
@@ -682,6 +701,7 @@ function renderHost(fresh) {
               <div id="qr"></div>
               <div class="url">${esc(location.host + location.pathname.replace(/\/$/, ""))}</div>
               <div class="roomcode">${esc(s.code)}</div>
+              <button class="ghost" data-invite>🔗 Copy invite link</button>
             </div>
             <div class="roster"><h2 id="pcount"></h2><div class="bubbles" id="bubbles"></div></div>
           </div>
@@ -879,7 +899,7 @@ function renderHost(fresh) {
 function renderPlayer(fresh) {
   const s = state, me = s.me;
   if (s.phase === "spin" && !fresh) return;
-  const head = `<div class="me"><span class="av">${me.emoji}</span>${esc(me.name)}<span class="sc">${me.score}</span></div>`;
+  const head = `<div class="me"><span class="av">${me.emoji}</span>${esc(me.name)}${s.phase !== "lobby" ? `<span class="rank">#${me.rank} of ${s.playerCount}</span>` : ""}<span class="sc">${me.score}</span></div>`;
   const reacts = `<div class="reacts">${REACTIONS.map((e) => `<button data-e="${e}">${e}</button>`).join("")}</div>`;
   let body = "";
 
@@ -899,7 +919,7 @@ function renderPlayer(fresh) {
       ${answered
         ? `<div class="center"><div class="huge">🤞</div><h2 class="display">Locked in</h2><p>${esc(pickedText)}</p>${me.allInActive ? `<p class="up"><b>🎲 ALL-IN</b></p>` : ""}</div>`
         : `<div class="answers ${s.q.options.length > 4 ? "many" : ""}">
-            ${s.q.options.map((o, pos) => `<button class="answer pop" data-i="${o.i}" style="${tileStyle(s.mod.id === "scramble" ? pos : o.i)}"><span>${SHAPES[(s.mod.id === "scramble" ? pos : o.i) % SHAPES.length]}</span>${esc(o.text)}</button>`).join("")}
+            ${s.q.options.map((o, pos) => `<button class="answer pop" data-i="${o.i}" style="${tileStyle(s.mod.id === "scramble" ? pos : o.i)}"><span>${SHAPES[(s.mod.id === "scramble" ? pos : o.i) % SHAPES.length]}</span>${esc(o.text)}${pos < 9 ? `<kbd>${pos + 1}</kbd>` : ""}</button>`).join("")}
           </div>`}
       ${!s.powerups ? "" : `<div class="powers">
         <button class="power ${me.allInActive ? "on" : ""}" id="allin" ${me.allInUsed || answered ? "disabled" : ""}>🎲 ${me.allInActive ? "ALL-IN!" : "All-in"}<br><small class="muted">2× or −500</small></button>
@@ -1070,6 +1090,16 @@ function mountEditor(root, model, onChange) {
   return { set(m) { model.splice(0, model.length, ...m); draw(); onChange(model); } };
 }
 
+const inviteUrl = () => `${location.origin}${location.pathname}?room=${room}`;
+document.addEventListener("click", async (e) => {
+  if (!e.target.closest("[data-invite]")) return;
+  try {
+    await navigator.clipboard.writeText(inviteUrl());
+    toast("🔗 Invite link copied. Paste it in the chat!");
+  } catch {
+    prompt("Copy this invite link:", inviteUrl());
+  }
+});
 document.addEventListener("click", (e) => {
   if (!e.target.closest("[data-close-room]")) return;
   if (confirm("Close the room? Everyone gets disconnected and the code stops working.")) sendMsg({ t: "close" });
@@ -1078,6 +1108,15 @@ document.addEventListener("click", (e) => {
 const drawMute = () => ($("#mutebtn").textContent = muted ? "🔇" : "🔊");
 drawMute();
 $("#mutebtn").onclick = () => { muted = !muted; store.set("rr-mute", muted ? "1" : "0"); drawMute(); unlockAudio(); };
+
+// Keys 1-9 pick an answer: players by button position, the Play-along host by card.
+document.addEventListener("keydown", (e) => {
+  const n = +e.key;
+  if (!(n >= 1 && n <= 9) || e.ctrlKey || e.metaKey || e.altKey || /INPUT|TEXTAREA|SELECT/.test(document.activeElement?.tagName)) return;
+  if (state?.phase !== "question") return;
+  if (role === "player") document.querySelectorAll(".answer")[n - 1]?.click();
+  else if (role === "host" && state.mode === "play") document.querySelectorAll(".tile[data-i]")[n - 1]?.click();
+});
 
 /* ---------- host modes ---------- */
 const lobbyMode = () => (store.get("rr-mode") === "play" ? "play" : "gm");
