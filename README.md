@@ -9,7 +9,12 @@ Chaotic multiplayer quiz for sprint retros. One person hosts on the shared scree
 - 🎲 All-in and 🧊 Ice the leader power-ups, once per game each
 - 🔥 Streaks, live emoji reactions, podium and confetti
 
-Questions are edited in the host lobby:
+Two host modes, picked in the lobby:
+
+- 🎮 **Play along**: the host plays too, with answer buttons on the host screen. Built-in questions, shuffled.
+- 🎛️ **Game master**: the host doesn't answer but controls everything: questions, answer time, which wheel modifiers are on, power-ups. During the game a **Control panel** (separate window, so answers never hit the shared screen) can queue or remove questions, change settings, reveal early, skip or end the game.
+
+Game master questions are written in the lobby:
 
 ```
 ? In what year was Git first released?

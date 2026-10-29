@@ -7,6 +7,14 @@ interface Env {
 
 type Phase = "lobby" | "spin" | "question" | "reveal" | "end";
 type ModId = "vanilla" | "double" | "speed" | "mines" | "heist" | "scramble" | "jackpot" | "contrarian";
+// play: the host is also a player and can't edit questions. gm: the host runs everything and doesn't answer.
+type Mode = "play" | "gm";
+
+interface Settings {
+  seconds: number;
+  mods: ModId[];
+  powerups: boolean;
+}
 
 interface Question {
   kind: "quiz" | "vote";
@@ -50,7 +58,7 @@ interface Reveal {
 const MODS: Record<ModId, { label: string; emoji: string; desc: string; color: string }> = {
   vanilla: { label: "Vanilla", emoji: "🍦", desc: "A perfectly normal question. Suspicious.", color: "#f5e6c8" },
   double: { label: "Double Trouble", emoji: "✌️", desc: "All points ×2", color: "#ff3d9a" },
-  speed: { label: "Speed Demon", emoji: "⚡", desc: "12 seconds. Go.", color: "#ffd23f" },
+  speed: { label: "Speed Demon", emoji: "⚡", desc: "Way less time. Go.", color: "#ffd23f" },
   mines: { label: "Minefield", emoji: "💣", desc: "Wrong or no answer: −300", color: "#ff4d4d" },
   heist: { label: "Heist", emoji: "🦹", desc: "Fastest correct answer steals 20% from the leader", color: "#8b5cf6" },
   scramble: { label: "Scramble", emoji: "🌀", desc: "Every phone's buttons are shuffled. Read!", color: "#2de2e6" },
@@ -60,9 +68,20 @@ const MODS: Record<ModId, { label: string; emoji: string; desc: string; color: s
 const QUIZ_MODS: ModId[] = ["vanilla", "double", "speed", "mines", "heist", "scramble", "jackpot"];
 const VOTE_MODS: ModId[] = ["vanilla", "double", "speed", "contrarian"];
 
+const SECONDS = [15, 20, 30, 45, 60];
+const DEFAULT_SETTINGS: Settings = { seconds: 30, mods: [...QUIZ_MODS, "contrarian"], powerups: true };
+const speedMs = (s: Settings) => Math.max(5, Math.round(s.seconds * 0.4)) * 1000;
+
+function cleanSettings(raw: unknown, prev: Settings): Settings {
+  const r = (raw && typeof raw === "object" ? raw : {}) as Partial<Settings>;
+  return {
+    seconds: SECONDS.includes(Number(r.seconds)) ? Number(r.seconds) : prev.seconds,
+    mods: Array.isArray(r.mods) ? r.mods.filter((m): m is ModId => m in MODS) : prev.mods,
+    powerups: typeof r.powerups === "boolean" ? r.powerups : prev.powerups,
+  };
+}
+
 const SPIN_MS = 6500;
-const QUESTION_MS = 30000;
-const SPEED_MS = 12000;
 const FREEZE_MS = 5000;
 const AVATARS = ["🦊", "🐸", "🐙", "🦄", "🐼", "🦖", "🐝", "🦉", "🐧", "🦀", "🐯", "🐨", "🦦", "🐳", "🦩", "🐲", "🦔", "🐌", "👾", "🤖"];
 const REACTIONS = ["🔥", "😂", "👏", "😱", "💀", "🎉", "🤡", "🧠"];
@@ -133,6 +152,8 @@ export class Room extends DurableObject<Env> {
   hostKey = "";
   created = false;
   phase: Phase = "lobby";
+  mode: Mode = "gm";
+  settings: Settings = DEFAULT_SETTINGS;
   questions: Question[] = [];
   qi = -1;
   cur: Question | null = null;
@@ -142,7 +163,7 @@ export class Room extends DurableObject<Env> {
   modPool: ModId[] = QUIZ_MODS;
   modIndex = 0;
   qStart = 0;
-  qDuration = QUESTION_MS;
+  qDuration = DEFAULT_SETTINGS.seconds * 1000;
   timer: ReturnType<typeof setTimeout> | null = null;
   reveal: Reveal | null = null;
 
@@ -219,18 +240,40 @@ export class Room extends DurableObject<Env> {
     if (msg.t === "start" && this.phase === "lobby") {
       const qs = parseQuestions(String(msg.questions ?? ""));
       if (!qs.length) return this.toHosts({ t: "event", text: "No valid questions found — check the format" });
-      this.questions = qs;
+      this.mode = msg.mode === "play" ? "play" : "gm";
+      this.settings = this.mode === "gm" ? cleanSettings(msg.settings, this.settings) : DEFAULT_SETTINGS;
+      this.questions = this.mode === "play" ? shuffle(qs) : qs;
       this.qi = -1;
       this.nextQuestion();
     } else if (msg.t === "skip" && this.phase === "question") {
       this.doReveal();
     } else if (msg.t === "next" && this.phase === "reveal") {
       this.nextQuestion();
+    } else if (msg.t === "settings" && this.mode === "gm") {
+      this.settings = cleanSettings(msg.settings, this.settings);
+      this.broadcast();
+    } else if (msg.t === "queueAdd" && this.mode === "gm" && this.phase !== "lobby") {
+      const qs = parseQuestions(String(msg.questions ?? ""));
+      if (!qs.length) return this.toHosts({ t: "event", text: "No valid questions found — check the format" });
+      this.questions.push(...qs);
+      this.toHosts({ t: "event", text: `➕ ${qs.length} question${qs.length > 1 ? "s" : ""} queued` });
+      this.broadcast();
+    } else if (msg.t === "queueRemove" && this.mode === "gm") {
+      const i = Number(msg.i);
+      if (!Number.isInteger(i) || i <= this.qi || i >= this.questions.length) return;
+      this.questions.splice(i, 1);
+      this.broadcast();
+    } else if (msg.t === "end" && this.mode === "gm" && this.phase !== "lobby" && this.phase !== "end") {
+      this.clearTimer();
+      this.phase = "end";
+      this.cur = null;
+      this.broadcast();
     } else if (msg.t === "again" && this.phase === "end") {
       for (const p of this.players.values()) {
         Object.assign(p, { score: 0, streak: 0, answer: null, allInUsed: false, allInActive: false, iceUsed: false, frozenUntil: 0 });
       }
       this.phase = "lobby";
+      this.qi = -1;
       this.reveal = null;
       this.cur = null;
       this.broadcast();
@@ -254,13 +297,13 @@ export class Room extends DurableObject<Env> {
         this.timer = setTimeout(() => this.doReveal(), 800);
       }
     } else if (msg.t === "allin") {
-      if (this.phase !== "question" || p.allInUsed || p.answer !== null) return;
+      if (this.phase !== "question" || !this.settings.powerups || p.allInUsed || p.answer !== null) return;
       p.allInUsed = true;
       p.allInActive = true;
       this.event(`🎲 ${p.name} went ALL-IN`);
       this.broadcast();
     } else if (msg.t === "ice") {
-      if (this.phase !== "question" || p.iceUsed) return;
+      if (this.phase !== "question" || !this.settings.powerups || p.iceUsed) return;
       const target = this.ranked().find((o) => o.id !== p.id && o.ws && o.answer === null && o.frozenUntil < now);
       if (!target) return this.send(p.ws, { t: "event", text: "Nobody left to freeze 🤷" });
       p.iceUsed = true;
@@ -292,7 +335,8 @@ export class Room extends DurableObject<Env> {
     } else {
       this.cur = q;
     }
-    this.modPool = q.kind === "quiz" ? QUIZ_MODS : VOTE_MODS;
+    const pool = (q.kind === "quiz" ? QUIZ_MODS : VOTE_MODS).filter((m) => this.settings.mods.includes(m));
+    this.modPool = pool.length ? pool : ["vanilla"];
     this.modIndex = Math.floor(Math.random() * this.modPool.length);
     this.mod = this.modPool[this.modIndex];
     for (const p of this.players.values()) {
@@ -306,7 +350,7 @@ export class Room extends DurableObject<Env> {
 
   private startQuestion() {
     this.phase = "question";
-    this.qDuration = this.mod === "speed" ? SPEED_MS : QUESTION_MS;
+    this.qDuration = this.mod === "speed" ? speedMs(this.settings) : this.settings.seconds * 1000;
     this.qStart = Date.now();
     this.broadcast();
     this.timer = setTimeout(() => this.doReveal(), this.qDuration + 300);
@@ -412,18 +456,23 @@ export class Room extends DurableObject<Env> {
     return r;
   }
 
+  private modInfo(id: ModId) {
+    return { id, ...MODS[id], ...(id === "speed" ? { desc: `${speedMs(this.settings) / 1000} seconds. Go.` } : {}) };
+  }
+
   private common() {
-    const m = MODS[this.mod];
     return {
       t: "state",
       code: this.code,
       phase: this.phase,
       qi: this.qi,
       total: this.questions.length,
-      mod: { id: this.mod, ...m },
+      mode: this.mode,
+      powerups: this.settings.powerups,
+      mod: this.modInfo(this.mod),
       deadline: this.qStart + this.qDuration,
       duration: this.qDuration,
-      wheel: this.modPool.map((id) => ({ id, ...MODS[id] })),
+      wheel: this.modPool.map((id) => this.modInfo(id)),
       modIndex: this.modIndex,
       now: Date.now(),
     };
@@ -431,6 +480,7 @@ export class Room extends DurableObject<Env> {
 
   private hostView() {
     const q = this.cur;
+    const gm = this.mode === "gm";
     return {
       ...this.common(),
       role: "host",
@@ -438,7 +488,11 @@ export class Room extends DurableObject<Env> {
         id: p.id, name: p.name, emoji: p.emoji, score: p.score, streak: p.streak,
         connected: !!p.ws, answered: p.answer !== null, allIn: p.allInActive, rank: this.rankOf(p),
       })),
-      q: q ? { kind: q.kind, text: q.text, options: q.options } : null,
+      // Answers and the queue only go out in gm mode, where the host isn't playing.
+      q: q ? { kind: q.kind, text: q.text, options: q.options, correct: gm ? q.correct : -1 } : null,
+      settings: this.settings,
+      allMods: (Object.keys(MODS) as ModId[]).map((id) => this.modInfo(id)),
+      queue: gm ? this.questions.map((q, i) => ({ i, ...q })).slice(this.qi + 1) : [],
       reveal: this.phase === "reveal" ? this.reveal : null,
     };
   }

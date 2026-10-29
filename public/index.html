@@ -176,6 +176,39 @@ input:focus, textarea:focus { outline: none; border-color: var(--cyan); }
 .phone-wheel .mod-reveal .m-label { font-size: 1.8rem; }
 .phone-wheel .mod-reveal .m-desc { font-size: 1rem; }
 .correct-card { width: 100%; justify-content: center; font-size: 1.3rem; box-shadow: 0 0 0 3px #fff, 0 0 30px #3ef08a88; }
+/* host modes */
+.modes { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+@media (max-width: 760px) { .modes { grid-template-columns: 1fr; } }
+.modecard { text-align: left; background: var(--panel); border: 2px solid var(--line); border-radius: 18px; padding: 16px 18px; display: grid; gap: 4px; }
+.modecard b { font-family: Bungee, sans-serif; font-size: 1.1rem; }
+.modecard.on { border-color: var(--yellow); box-shadow: 0 0 24px #ffd23f44; }
+.modeopts { display: grid; gap: 12px; }
+.settings { display: flex; flex-wrap: wrap; gap: 10px 18px; align-items: center; }
+.settings select { font: inherit; color: var(--ink); background: #0008; border: 2px solid var(--line); border-radius: 10px; padding: 6px 10px; }
+.mods { display: flex; flex-wrap: wrap; gap: 8px; width: 100%; }
+input[type="checkbox"] { width: auto; accent-color: var(--yellow); margin: 0 4px 0 0; vertical-align: middle; }
+.modchip input { display: none; }
+.modchip { border: 2px solid var(--c); border-radius: 999px; padding: 4px 12px 4px 8px; font-weight: 600; font-size: .9rem; cursor: pointer; }
+.modchip:has(input:not(:checked)) { opacity: .4; border-style: dashed; }
+.hostname { max-width: 320px; }
+#mybar { position: fixed; left: 0; right: 0; bottom: 0; z-index: 12; display: none; gap: 10px; align-items: center; justify-content: center; flex-wrap: wrap; padding: 12px 16px; background: #0d0820f2; border-top: 2px solid var(--yellow); }
+body.playing #mybar { display: flex; }
+body.playing .host { padding-bottom: 130px; }
+body.playing #toasts { bottom: 140px; }
+#mybar .who { font-weight: 800; color: var(--yellow); }
+#mybar .answer { min-height: 48px; padding: 10px 16px; font-size: 1rem; }
+#mybar .power { padding: 8px 12px; }
+#mybar .frz { background: var(--cyan); color: #0b2a3a; border-radius: 12px; padding: 10px 16px; font-weight: 800; }
+#cpbtn { position: fixed; left: 16px; bottom: 16px; z-index: 11; display: none; }
+body.gm-host #cpbtn { display: block; }
+.panel { max-width: 760px; margin: 0 auto; padding: 20px 16px 60px; display: grid; gap: 16px; }
+.panel h1 { margin: 0; font-size: 1.4rem; }
+.panel .row { display: flex; gap: 10px; flex-wrap: wrap; }
+.panel .opt { padding: 4px 0; }
+.panel .opt.right { color: var(--green); font-weight: 800; }
+.qrow { display: grid; grid-template-columns: 1fr auto; gap: 10px; align-items: center; border-top: 1px solid var(--line); padding: 8px 0; }
+.qrow small { color: var(--green); }
+#padd { min-height: 120px; font-family: ui-monospace, monospace; font-size: .9rem; }
 .reacts { position: fixed; bottom: 0; left: 0; right: 0; display: flex; justify-content: center; gap: 4px; padding: 10px 10px calc(10px + env(safe-area-inset-bottom)); background: #0d0820ee; border-top: 2px solid var(--line); z-index: 12; }
 .reacts button { font-size: 1.7rem; background: none; padding: 4px 6px; border-radius: 10px; }
 .reacts button:active { transform: scale(1.4); }
@@ -185,6 +218,8 @@ input:focus, textarea:focus { outline: none; border-color: var(--cyan); }
 <div id="app"></div>
 <div id="toasts"></div>
 <div id="conn">reconnecting…</div>
+<div id="mybar"></div>
+<button class="ghost" id="cpbtn">🎛️ Control panel</button>
 <script>
 const DEFAULT_QUESTIONS = `# "? question" then options, * marks the right one (2-4 options)
 # "vote: prompt" = everyone votes for a teammate. Majority wins points.
@@ -300,6 +335,8 @@ const params = new URLSearchParams(location.search);
 const API = location.hostname.endsWith("github.io") ? "https://retro-rumble.zancato-t.workers.dev" : location.origin;
 
 let ws = null, role = null, room = null, state = null, offset = 0, lastKey = "", seenPlayers = new Set();
+let mine = null, mineState = null, mineFrozen = false; // the host's own player seat in Play-along mode
+const SECONDS = [15, 20, 30, 45, 60];
 const serverNow = () => Date.now() + offset;
 
 /* ---------- sound (host only) ---------- */
@@ -372,7 +409,7 @@ function countUp(el, from, to, ms = 1100) {
 function connect() {
   const api = new URL(API);
   const proto = api.protocol === "https:" ? "wss" : "ws";
-  const q = role === "host"
+  const q = role === "host" || role === "panel"
     ? `role=host&key=${encodeURIComponent(store.get("rr-host-" + room) || "")}`
     : `role=player&pid=${encodeURIComponent(myId())}&name=${encodeURIComponent(store.get("rr-name") || "")}`;
   ws = new WebSocket(`${proto}://${api.host}/ws/${room}?${q}`);
@@ -390,15 +427,20 @@ function connect() {
       role = null; state = null; lastKey = "";
       return landing();
     }
-    if (ev.code === 4001) return; // replaced by another tab
+    if (ev.code === 4001) return toast("You joined from somewhere else, this tab is now inactive");
     $("#conn").style.display = "block";
     setTimeout(connect, 1200);
   };
 }
 const sendMsg = (m) => ws?.readyState === 1 && ws.send(JSON.stringify(m));
 function myId() {
-  let id = store.get("rr-pid");
-  if (!id) { id = crypto.randomUUID?.() || String(Math.random()).slice(2); store.set("rr-pid", id); }
+  // Per tab, so several tabs on one PC are separate players (a reload keeps the same one).
+  let id = null;
+  try { id = sessionStorage.getItem("rr-pid"); } catch {}
+  if (!id) {
+    id = crypto.randomUUID?.() || String(Math.random()).slice(2);
+    try { sessionStorage.setItem("rr-pid", id); } catch {}
+  }
   return id;
 }
 
@@ -449,7 +491,13 @@ function render() {
   const fresh = key !== lastKey;
   lastKey = key;
   app.className = fresh ? "fresh" : "";
-  if (state.role === "host") renderHost(fresh); else renderPlayer(fresh);
+  if (role === "panel") renderPanel();
+  else if (state.role === "host") renderHost(fresh);
+  else renderPlayer(fresh);
+  if (role === "host") {
+    document.body.classList.toggle("gm-host", state.mode === "gm" && state.phase !== "lobby");
+    renderMine();
+  }
   if (fresh) setTimeout(() => app.classList.remove("fresh"), 1200);
 }
 
@@ -492,6 +540,8 @@ function renderHost(fresh) {
   if (s.phase === "lobby") {
     if (fresh) {
       const joinUrl = `${location.origin}${location.pathname}?room=${s.code}`;
+      let settings = s.settings;
+      try { settings = { ...settings, ...JSON.parse(store.get("rr-settings") || "{}") }; } catch {}
       app.innerHTML = `
         <div class="host">
           <h1 class="brand">RETRO RUMBLE</h1>
@@ -504,11 +554,21 @@ function renderHost(fresh) {
             </div>
             <div class="roster"><h2 id="pcount"></h2><div class="bubbles" id="bubbles"></div></div>
           </div>
-          <details class="qedit">
-            <summary>✏️ Edit questions (<span id="qn"></span>)</summary>
-            <textarea id="qtext" spellcheck="false"></textarea>
-            <div class="help muted">"? question" then 2–4 options with * on the right one · "vote: who is most likely to…" pits teammates against each other · edits are remembered on this browser · <a href="#" id="qreset" style="color:var(--cyan)">reset to defaults</a></div>
-          </details>
+          <div class="modes">
+            <button class="modecard" data-mode="play"><b>🎮 Play along</b><span class="muted">You play too, from this screen. Built-in questions, shuffled. No peeking.</span></button>
+            <button class="modecard" data-mode="gm"><b>🎛️ Game master</b><span class="muted">You run the show: your questions, your rules. Queue questions, skip or end from the control panel.</span></button>
+          </div>
+          <div class="modeopts" data-for="play">
+            <input class="hostname" id="hostname" maxlength="16" placeholder="Your player name" value="${esc(store.get("rr-name") || "")}">
+          </div>
+          <div class="modeopts" data-for="gm">
+            <div id="lobbySettings">${settingsHTML(settings, s.allMods)}</div>
+            <details class="qedit">
+              <summary>✏️ Edit questions (<span id="qn"></span>)</summary>
+              <textarea id="qtext" spellcheck="false"></textarea>
+              <div class="help muted">"? question" then 2–4 options with * on the right one · "vote: who is most likely to…" pits teammates against each other · edits are remembered on this browser · <a href="#" id="qreset" style="color:var(--cyan)">reset to defaults</a></div>
+            </details>
+          </div>
           <div class="lobby-actions"><button class="big" id="start">Let's rumble ▶</button></div>
         </div>`;
       try { new QRCode($("#qr"), { text: joinUrl, width: 190, height: 190, colorDark: "#0d0820", colorLight: "#ffffff" }); } catch { $("#qr").remove(); }
@@ -518,15 +578,33 @@ function renderHost(fresh) {
       ta.oninput = () => { store.set("rr-questions", ta.value); countQs(); };
       countQs();
       $("#qreset").onclick = (e) => { e.preventDefault(); ta.value = DEFAULT_QUESTIONS; ta.oninput(); };
-      $("#start").onclick = () => { unlockAudio(); sendMsg({ t: "start", questions: ta.value }); };
+      $("#lobbySettings").onchange = () => store.set("rr-settings", JSON.stringify(readSettings($("#lobbySettings"))));
+      document.querySelectorAll(".modecard").forEach((b) => (b.onclick = () => { store.set("rr-mode", b.dataset.mode); renderHost(false); }));
+      $("#hostname").oninput = () => renderHost(false);
+      $("#start").onclick = () => {
+        unlockAudio();
+        if (lobbyMode() === "play") {
+          const name = $("#hostname").value.trim();
+          store.set("rr-name", name);
+          store.set("rr-hostplayer-" + room, name);
+          connectMine(() => sendMsg({ t: "start", mode: "play", questions: DEFAULT_QUESTIONS }));
+        } else {
+          sendMsg({ t: "start", mode: "gm", questions: ta.value, settings: readSettings($("#lobbySettings")) });
+        }
+      };
       seenPlayers = new Set();
     }
-    const n = s.players.length;
+    const n = s.players.length, mode = lobbyMode();
+    document.querySelectorAll(".modecard").forEach((b) => b.classList.toggle("on", b.dataset.mode === mode));
+    document.querySelectorAll(".modeopts").forEach((el) => (el.style.display = el.dataset.for === mode ? "" : "none"));
     $("#pcount").textContent = n ? `${n} player${n > 1 ? "s" : ""} in` : "Waiting for players…";
     $("#bubbles").innerHTML = s.players.map((p) => `<div class="bubble ${p.connected ? "" : "off"}"><span class="av" style="animation-delay:-${Math.random() * 2}s">${p.emoji}</span>${esc(p.name)}</div>`).join("");
     if (s.players.some((p) => !seenPlayers.has(p.id))) sfx.join();
     seenPlayers = new Set(s.players.map((p) => p.id));
-    $("#start").disabled = n === 0;
+    const hostName = $("#hostname").value.trim();
+    const ready = mode === "play" ? !!hostName : n > 0;
+    $("#start").disabled = !ready;
+    $("#start").textContent = ready ? "Let's rumble ▶" : mode === "play" ? "Enter your name to play" : "Waiting for a player to join…";
     return;
   }
 
@@ -629,7 +707,7 @@ function renderPlayer(fresh) {
   if (s.phase === "lobby") {
     body = `<div class="center"><div class="huge pop" style="animation:wobble 2s infinite">${me.emoji}</div><h2 class="display pop">You're in!</h2>
       <p class="muted">Eyes on the shared screen. ${s.playerCount} player${s.playerCount > 1 ? "s" : ""} so far.</p>
-      <p class="muted">🎲 <b>All-in</b> and 🧊 <b>Ice the leader</b> can each be used once per game. Use them wisely. Or don't.</p></div>`;
+      ${s.powerups ? `<p class="muted">🎲 <b>All-in</b> and 🧊 <b>Ice the leader</b> can each be used once per game. Use them wisely. Or don't.</p>` : ""}</div>`;
   } else if (s.phase === "spin") {
     body = `<div class="phone-wheel">${wheelHTML(s)}</div>`;
   } else if (s.phase === "question" && s.q) {
@@ -644,10 +722,10 @@ function renderPlayer(fresh) {
         : `<div class="answers ${s.q.options.length > 4 ? "many" : ""}">
             ${s.q.options.map((o, pos) => `<button class="answer pop" data-i="${o.i}" style="${tileStyle(s.mod.id === "scramble" ? pos : o.i)}"><span>${SHAPES[(s.mod.id === "scramble" ? pos : o.i) % SHAPES.length]}</span>${esc(o.text)}</button>`).join("")}
           </div>`}
-      <div class="powers">
+      ${!s.powerups ? "" : `<div class="powers">
         <button class="power ${me.allInActive ? "on" : ""}" id="allin" ${me.allInUsed || answered ? "disabled" : ""}>🎲 ${me.allInActive ? "ALL-IN!" : "All-in"}<br><small class="muted">2× or −500</small></button>
         <button class="power" id="ice" ${me.iceUsed ? "disabled" : ""}>🧊 Ice the leader<br><small class="muted">freeze them 5s</small></button>
-      </div>
+      </div>`}
       ${serverNow() < me.frozenUntil ? `<div class="frozen"><div class="huge">🧊</div><div>FROZEN by ${esc(me.frozenBy)}</div><div class="secs" id="fsecs"></div></div>` : ""}`;
   } else if (s.phase === "reveal") {
     const r = s.result || { delta: 0, correct: null, note: "" };
@@ -677,6 +755,141 @@ function renderPlayer(fresh) {
   if (s.phase === "reveal" && fresh) navigator.vibrate?.(s.result?.delta > 0 ? 60 : [40, 60, 40]);
 }
 
+/* ---------- host modes ---------- */
+const lobbyMode = () => (store.get("rr-mode") === "play" ? "play" : "gm");
+
+function settingsHTML(st, allMods) {
+  return `<div class="settings">
+    <label>⏱️ Answer time <select data-set="seconds">${SECONDS.map((n) => `<option value="${n}" ${st.seconds === n ? "selected" : ""}>${n}s</option>`).join("")}</select></label>
+    <label><input type="checkbox" data-set="powerups" ${st.powerups ? "checked" : ""}> 🎲🧊 Power-ups</label>
+    <div class="mods">${allMods.map((m) => `<label class="modchip" style="--c:${m.color}"><input type="checkbox" data-mod="${m.id}" ${st.mods.includes(m.id) ? "checked" : ""}> ${m.emoji} ${esc(m.label)}</label>`).join("")}</div>
+  </div>`;
+}
+function readSettings(root) {
+  return {
+    seconds: +root.querySelector('[data-set="seconds"]').value,
+    powerups: root.querySelector('[data-set="powerups"]').checked,
+    mods: [...root.querySelectorAll("[data-mod]")].filter((x) => x.checked).map((x) => x.dataset.mod),
+  };
+}
+
+// Play along: the host screen also holds a player seat, on its own socket.
+function connectMine(onFirstState) {
+  if (mine) return onFirstState?.();
+  const api = new URL(API), proto = api.protocol === "https:" ? "wss" : "ws";
+  const pid = "host-" + (store.get("rr-host-" + room) || "").slice(0, 12);
+  const name = store.get("rr-hostplayer-" + room) || "Host";
+  mine = new WebSocket(`${proto}://${api.host}/ws/${room}?role=player&pid=${encodeURIComponent(pid)}&name=${encodeURIComponent(name)}`);
+  mine.onmessage = (ev) => {
+    const msg = JSON.parse(ev.data);
+    if (msg.t !== "state") return; // events already arrive on the host socket
+    mineState = msg;
+    document.body.classList.add("playing");
+    renderMine();
+    if (onFirstState) { const f = onFirstState; onFirstState = null; f(); }
+  };
+  mine.onclose = (ev) => {
+    mine = null;
+    if (ev.code < 4000) setTimeout(() => connectMine(), 1200);
+  };
+}
+const sendMine = (m) => mine?.readyState === 1 && mine.send(JSON.stringify(m));
+
+function renderMine() {
+  const bar = $("#mybar"), s = mineState;
+  if (!s || !state || state.mode !== "play") { document.body.classList.remove("playing"); return; }
+  document.body.classList.add("playing");
+  const me = s.me;
+  const who = `<span class="who">${me.emoji} ${esc(me.name)} · ${me.score}</span>`;
+  mineFrozen = s.phase === "question" && serverNow() < me.frozenUntil;
+  let html = who;
+  if (s.phase === "question" && s.q) {
+    const answered = me.answer !== null;
+    if (mineFrozen) html += `<span class="frz">🧊 Frozen by ${esc(me.frozenBy)}</span>`;
+    else if (answered) html += `<span class="display">🔒 Locked in</span>`;
+    else html += s.q.options.map((o, pos) => {
+      const c = s.mod.id === "scramble" ? pos : o.i;
+      return `<button class="answer" data-i="${o.i}" style="${tileStyle(c)}"><span>${SHAPES[c % SHAPES.length]}</span>${esc(o.text)}</button>`;
+    }).join("");
+    if (s.powerups) html += `
+      <button class="power ${me.allInActive ? "on" : ""}" data-p="allin" ${me.allInUsed || answered ? "disabled" : ""}>🎲 ${me.allInActive ? "ALL-IN!" : "All-in"}</button>
+      <button class="power" data-p="ice" ${me.iceUsed ? "disabled" : ""}>🧊 Ice</button>`;
+  } else if (s.phase === "reveal" && s.result) {
+    const r = s.result;
+    html += `<span class="display ${r.delta > 0 ? "up" : r.delta < 0 ? "down" : "muted"}">${r.delta > 0 ? "+" : ""}${r.delta}</span>${r.note ? `<span class="muted">${esc(r.note)}</span>` : ""}<span class="muted">#${me.rank}</span>`;
+  } else if (s.phase === "end") {
+    html += `<span class="display">#${me.rank} of ${s.playerCount}</span>`;
+  } else {
+    html += `<span class="muted">You're playing too 🎮</span>`;
+  }
+  bar.innerHTML = html;
+  bar.querySelectorAll(".answer").forEach((b) => (b.onclick = () => sendMine({ t: "answer", i: +b.dataset.i })));
+  bar.querySelectorAll("[data-p]").forEach((b) => (b.onclick = () => sendMine({ t: b.dataset.p })));
+}
+
+// Game master: a separate window so upcoming answers never hit the shared screen.
+$("#cpbtn").onclick = () => window.open(`${location.pathname}?host=${room}&panel=1`, "rr-panel", "width=820,height=900");
+let panelBuilt = false;
+function renderPanel() {
+  const s = state;
+  if (s.mode !== "gm" && s.phase !== "lobby") {
+    app.innerHTML = `<div class="panel"><h1 class="display">🎛️ Control panel</h1><p class="muted">This game is in Play-along mode, so there's nothing to control here.</p></div>`;
+    panelBuilt = false;
+    return;
+  }
+  if (!panelBuilt) {
+    panelBuilt = true;
+    app.innerHTML = `
+      <div class="panel">
+        <h1 class="display">🎛️ Control panel · ${esc(s.code)}</h1>
+        <section class="card"><h2>Now</h2><div id="pnow"></div><div class="row" id="pactions"></div></section>
+        <section class="card"><h2>Settings</h2><div id="psettings">${settingsHTML(s.settings, s.allMods)}</div><small class="muted">Changes apply from the next question.</small></section>
+        <section class="card"><h2>Up next (<span id="pqn"></span>)</h2><div id="pqueue"></div>
+          <textarea id="padd" spellcheck="false" placeholder="? Your question
+wrong answer
+*right answer
+
+vote: Who is most likely to…"></textarea>
+          <button class="ghost" id="paddbtn">➕ Add to queue</button>
+        </section>
+      </div>`;
+    $("#psettings").onchange = () => sendMsg({ t: "settings", settings: readSettings($("#psettings")) });
+    $("#paddbtn").onclick = () => {
+      if (!$("#padd").value.trim()) return;
+      sendMsg({ t: "queueAdd", questions: $("#padd").value });
+      $("#padd").value = "";
+    };
+  }
+  const phaseLabel = { lobby: "In the lobby", spin: "Spinning the wheel", question: "Question live", reveal: "Showing results", end: "Game over" }[s.phase];
+  let now = `<p><b>${phaseLabel}</b>${s.phase !== "lobby" ? ` · Q ${Math.min(s.qi + 1, s.total)} / ${s.total}` : ""}</p>`;
+  if (s.q && s.phase !== "end") {
+    const done = s.players.filter((p) => p.answered).length, live = s.players.filter((p) => p.connected).length;
+    now += `<p><b>${esc(s.q.text)}</b> <span class="muted">· ${s.mod.emoji} ${esc(s.mod.label)}</span></p>` +
+      (s.q.kind === "quiz" ? s.q.options.map((o, i) => `<div class="opt ${i === s.q.correct ? "right" : ""}">${i === s.q.correct ? "✔" : "·"} ${esc(o)}</div>`).join("") : `<p class="muted">Team vote</p>`) +
+      (s.phase === "question" ? `<p class="muted">${done}/${live} locked in</p>` : "");
+  }
+  $("#pnow").innerHTML = now;
+  const last = s.qi + 1 >= s.total;
+  $("#pactions").innerHTML =
+    (s.phase === "lobby" ? `<span class="muted">Start the game from the main screen.</span>` : "") +
+    (s.phase === "question" ? `<button class="big" data-a="skip">Reveal now ⏭</button>` : "") +
+    (s.phase === "reveal" ? `<button class="big" data-a="next">${last ? "Final results 🏆" : "Next ▶"}</button>` : "") +
+    (s.phase === "end" ? `<button class="big" data-a="again">Run it back 🔁</button>` : "") +
+    (["spin", "question", "reveal"].includes(s.phase) ? `<button class="ghost" data-a="end">End game now</button>` : "");
+  $("#pactions").querySelectorAll("[data-a]").forEach((b) => (b.onclick = () => {
+    if (b.dataset.a === "end" && !confirm("End the game and show the podium?")) return;
+    sendMsg({ t: b.dataset.a });
+  }));
+  const ps = $("#psettings");
+  if (!ps.contains(document.activeElement)) ps.innerHTML = settingsHTML(s.settings, s.allMods);
+  $("#pqn").textContent = s.queue.length;
+  $("#pqueue").innerHTML = s.queue.length
+    ? s.queue.map((q) => `<div class="qrow"><div>${q.kind === "vote" ? "🗳️" : "🧠"} ${esc(q.text)}${q.kind === "quiz" ? `<br><small>✔ ${esc(q.options[q.correct])}</small>` : ""}</div><button class="ghost" data-rm="${q.i}">✕</button></div>`).join("")
+    : `<p class="muted">${s.phase === "lobby" ? "Questions are set in the lobby on the main screen." : "Nothing queued. Add some below, or the game ends after this one."}</p>`;
+  $("#pqueue").querySelectorAll("[data-rm]").forEach((b) => (b.onclick = () => sendMsg({ t: "queueRemove", i: +b.dataset.rm })));
+  $("#paddbtn").disabled = s.phase === "lobby" || s.phase === "end";
+}
+
 /* ---------- per-frame: timer bar, last-seconds ticks, unfreeze ---------- */
 let lastTick = -1;
 (function loop() {
@@ -690,6 +903,7 @@ let lastTick = -1;
     const secs = Math.ceil(left / 1000);
     document.querySelectorAll(".timer-num").forEach((el) => (el.textContent = secs));
     if (role === "host" && secs <= 5 && secs > 0 && secs !== lastTick) { lastTick = secs; sfx.tick(); }
+    if (role === "host" && mineState && mineFrozen !== (serverNow() < mineState.me.frozenUntil)) renderMine();
     if (role === "player") {
       const f = state.me.frozenUntil - serverNow();
       const fs = $("#fsecs");
@@ -703,8 +917,11 @@ let lastTick = -1;
 
 /* ---------- boot ---------- */
 if (params.get("host") && store.get("rr-host-" + params.get("host").toUpperCase())) {
-  room = params.get("host").toUpperCase(); role = "host"; connect();
-} else if (params.get("room") && store.get("rr-name") && store.get("rr-pid")) {
+  room = params.get("host").toUpperCase();
+  role = params.get("panel") ? "panel" : "host";
+  connect();
+  if (role === "host" && store.get("rr-hostplayer-" + room)) connectMine();
+} else if (params.get("room") && store.get("rr-name")) {
   room = params.get("room").toUpperCase(); role = "player"; connect();
 } else {
   landing();
