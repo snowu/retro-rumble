@@ -6,7 +6,8 @@ interface Env {
 }
 
 type Phase = "lobby" | "spin" | "question" | "reveal" | "end";
-type ModId = "vanilla" | "double" | "speed" | "mines" | "heist" | "scramble" | "jackpot" | "contrarian";
+type ModId = "vanilla" | "double" | "speed" | "mines" | "heist" | "scramble" | "jackpot" | "contrarian" | "opposite" | "wobbly" | "upside" | "blurry" | "robin";
+type PrankId = "ice" | "banana" | "fog" | "swap";
 // play: the host is also a player and can't edit questions. gm: the host runs everything and doesn't answer.
 type Mode = "play" | "gm";
 
@@ -35,10 +36,34 @@ interface Player {
   perm: number[] | null;
   allInUsed: boolean;
   allInActive: boolean;
-  iceUsed: boolean;
+  prank: PrankId | null; // one prank card in hand, refilled every few questions
   frozenUntil: number;
   frozenBy: string;
+  fogUntil: number;
+  fogBy: string;
+  banana: boolean; // buttons reshuffled this question
+  swapPending: boolean;
   lastReact: number;
+  titles: string[]; // won team votes
+  stats: Stats;
+}
+
+// Collected over a game for the silly awards at the end.
+interface Stats {
+  allInLost: number;
+  slowestRight: number;
+  loneWolf: number;
+  reacts: number;
+  pranked: number;
+  ghost: number;
+}
+const freshStats = (): Stats => ({ allInLost: 0, slowestRight: 0, loneWolf: 0, reacts: 0, pranked: 0, ghost: 0 });
+
+interface Award {
+  emoji: string;
+  title: string;
+  desc: string;
+  id: string;
 }
 
 interface Result {
@@ -54,6 +79,7 @@ interface Reveal {
   results: Record<string, Result>;
   rankBefore: Record<string, number>;
   picks: Record<string, number | null>;
+  roast: string;
 }
 
 const MODS: Record<ModId, { label: string; emoji: string; desc: string; color: string }> = {
@@ -65,9 +91,17 @@ const MODS: Record<ModId, { label: string; emoji: string; desc: string; color: s
   scramble: { label: "Scramble", emoji: "🌀", desc: "Every phone's buttons are shuffled. Read!", color: "#2de2e6" },
   jackpot: { label: "Jackpot", emoji: "🎰", desc: "Only the fastest correct answer scores: 2000", color: "#3ef08a" },
   contrarian: { label: "Contrarian", emoji: "🙃", desc: "The LEAST picked answer wins", color: "#ff8a3d" },
+  opposite: { label: "Opposite Day", emoji: "🔄", desc: "Wrong answers score. The right one costs you 300.", color: "#5b8cff" },
+  wobbly: { label: "Wobbly", emoji: "🫨", desc: "The buttons have had a few drinks", color: "#ff9ff3" },
+  upside: { label: "Upside Down", emoji: "🤸", desc: "Australian edition", color: "#7bed9f" },
+  blurry: { label: "Blurry", emoji: "👓", desc: "Lost my glasses. It sharpens up. Eventually.", color: "#c8d6e5" },
+  robin: { label: "Robin Hood", emoji: "🏹", desc: "After this one, first and last place SWAP scores", color: "#2ecc71" },
 };
-const QUIZ_MODS: ModId[] = ["vanilla", "double", "speed", "mines", "heist", "scramble", "jackpot"];
-const VOTE_MODS: ModId[] = ["vanilla", "double", "speed", "contrarian"];
+const QUIZ_MODS: ModId[] = ["vanilla", "double", "speed", "mines", "heist", "scramble", "jackpot", "opposite", "wobbly", "upside", "blurry", "robin"];
+const VOTE_MODS: ModId[] = ["vanilla", "double", "speed", "contrarian", "wobbly", "upside", "robin"];
+const PRANKS: PrankId[] = ["ice", "banana", "fog", "swap"];
+const FOG_MS = 6000;
+const isHostSeat = (p: Player) => p.id.startsWith("host-"); // the host's own seat answers on the big screen
 
 const SECONDS = [15, 20, 30, 45, 60];
 const DEFAULT_SETTINGS: Settings = { seconds: 30, mods: [...QUIZ_MODS, "contrarian"], powerups: true };
@@ -206,6 +240,11 @@ function playSet(builtin: Question[], trivia: Question[], asked: Set<string>): Q
   return [...out, ...votes];
 }
 
+// "Who is most likely to push to main?" becomes "most likely to push to main".
+function voteTitle(text: string): string {
+  return text.trim().replace(/\?+$/, "").replace(/^who(?:'s|\s+is|\s+will be)?\s+/i, "") || text;
+}
+
 export default {
   async fetch(req: Request, env: Env): Promise<Response> {
     const url = new URL(req.url);
@@ -256,6 +295,8 @@ export class Room extends DurableObject<Env> {
   reveal: Reveal | null = null;
   starting = false;
   asked = new Set<string>(); // question texts already played in this room, so reruns stay fresh
+  voteIds: string[] = []; // player ids behind the current vote's options
+  robinUsed = false;
 
   async fetch(req: Request): Promise<Response> {
     const url = new URL(req.url);
@@ -303,7 +344,8 @@ export class Room extends DurableObject<Env> {
         id, name, ws: server,
         emoji: pick(AVATARS.filter((a) => !used.has(a)).concat(used.size >= AVATARS.length ? AVATARS : [])),
         score: 0, streak: 0, answer: null, answeredAt: 0, perm: null,
-        allInUsed: false, allInActive: false, iceUsed: false, frozenUntil: 0, frozenBy: "", lastReact: 0,
+        allInUsed: false, allInActive: false, prank: pick(PRANKS), frozenUntil: 0, frozenBy: "",
+        fogUntil: 0, fogBy: "", banana: false, swapPending: false, lastReact: 0, titles: [], stats: freshStats(),
       };
       this.players.set(id, p);
     }
@@ -344,6 +386,7 @@ export class Room extends DurableObject<Env> {
         this.questions = qs;
       }
       this.qi = -1;
+      this.robinUsed = false;
       this.nextQuestion();
     } else if (msg.t === "skip" && this.phase === "question") {
       this.doReveal();
@@ -380,7 +423,7 @@ export class Room extends DurableObject<Env> {
       for (const ws of sockets) try { ws?.close(4005, "room closed"); } catch {}
     } else if (msg.t === "again" && this.phase === "end") {
       for (const p of this.players.values()) {
-        Object.assign(p, { score: 0, streak: 0, answer: null, allInUsed: false, allInActive: false, iceUsed: false, frozenUntil: 0 });
+        Object.assign(p, { score: 0, streak: 0, answer: null, allInUsed: false, allInActive: false, prank: pick(PRANKS), frozenUntil: 0, titles: [], stats: freshStats() });
       }
       this.phase = "lobby";
       this.qi = -1;
@@ -412,19 +455,45 @@ export class Room extends DurableObject<Env> {
       p.allInActive = true;
       this.event(`🎲 ${p.name} went ALL-IN`);
       this.broadcast();
-    } else if (msg.t === "ice") {
-      if (this.phase !== "question" || !this.settings.powerups || p.iceUsed) return;
-      const target = this.ranked().find((o) => o.id !== p.id && o.ws && o.answer === null && o.frozenUntil < now);
-      if (!target) return this.send(p.ws, { t: "event", text: "Nobody left to freeze 🤷" });
-      p.iceUsed = true;
-      target.frozenUntil = now + FREEZE_MS;
-      target.frozenBy = p.name;
-      this.event(`🧊 ${p.name} froze ${target.name}!`);
+    } else if (msg.t === "prank") {
+      if (this.phase !== "question" || !this.settings.powerups || !p.prank) return;
+      const open = [...this.players.values()].filter((o) => o.id !== p.id && o.ws && o.answer === null);
+      if (p.prank === "swap") {
+        if (p.swapPending) return;
+        p.swapPending = true;
+        p.prank = null;
+        this.event(`🔄 ${p.name} is planning a swap 👀`);
+        return this.broadcast();
+      }
+      const target =
+        p.prank === "ice" ? this.ranked().find((o) => open.includes(o) && o.frozenUntil < now)
+        : p.prank === "banana" ? pick(open.filter((o) => !o.banana && !isHostSeat(o)))
+        : pick(open.filter((o) => o.fogUntil < now && !isHostSeat(o)));
+      if (!target) return this.send(p.ws, { t: "event", text: "Nobody left to prank 🤷 Keep it for later" });
+      target.stats.pranked++;
+      if (p.prank === "ice") {
+        target.frozenUntil = now + FREEZE_MS;
+        target.frozenBy = p.name;
+        this.event(`🧊 ${p.name} froze ${target.name}!`);
+      } else if (p.prank === "banana") {
+        target.banana = true;
+        const perm = target.perm ?? this.cur!.options.map((_, i) => i);
+        let next = shuffle(perm);
+        while (perm.length > 1 && next.every((v, k) => v === perm[k])) next = shuffle(perm);
+        target.perm = next;
+        this.event(`🍌 ${p.name} banana'd ${target.name}'s buttons!`);
+      } else {
+        target.fogUntil = now + FOG_MS;
+        target.fogBy = p.name;
+        this.event(`🌫️ ${p.name} fogged up ${target.name}'s screen!`);
+      }
+      p.prank = null;
       this.broadcast();
     } else if (msg.t === "react") {
       const e = String(msg.e);
       if (!REACTIONS.includes(e) || now - p.lastReact < 250) return;
       p.lastReact = now;
+      p.stats.reacts++;
       this.toHosts({ t: "react", e });
     }
   }
@@ -440,18 +509,25 @@ export class Room extends DurableObject<Env> {
     const q = this.questions[this.qi];
     this.asked.add(q.text);
     if (q.kind === "vote") {
-      const names = [...this.players.values()].map((p) => `${p.emoji} ${p.name}`);
-      if (names.length < 2) return this.nextQuestion();
-      this.cur = { ...q, options: names };
+      const ps = [...this.players.values()];
+      if (ps.length < 2) return this.nextQuestion();
+      this.voteIds = ps.map((p) => p.id);
+      this.cur = { ...q, options: ps.map((p) => `${p.emoji} ${p.name}`) };
     } else {
       this.cur = q;
     }
-    const pool = (q.kind === "quiz" ? QUIZ_MODS : VOTE_MODS).filter((m) => this.settings.mods.includes(m));
+    // Robin Hood is a once-a-game outrage, and only once there's something to steal.
+    const robinOk = !this.robinUsed && this.players.size >= 3 && this.qi >= 3;
+    const pool = (q.kind === "quiz" ? QUIZ_MODS : VOTE_MODS).filter((m) => this.settings.mods.includes(m) && (m !== "robin" || robinOk));
     this.modPool = pool.length ? pool : ["vanilla"];
     this.modIndex = Math.floor(Math.random() * this.modPool.length);
     this.mod = this.modPool[this.modIndex];
+    if (this.mod === "robin") this.robinUsed = true;
+    const refill = this.qi > 0 && this.qi % 5 === 0;
+    if (refill && [...this.players.values()].some((p) => !p.prank)) this.event("🃏 Fresh prank cards for everyone who used theirs");
     for (const p of this.players.values()) {
-      Object.assign(p, { answer: null, answeredAt: 0, perm: null, allInActive: false, frozenUntil: 0 });
+      Object.assign(p, { answer: null, answeredAt: 0, perm: null, allInActive: false, frozenUntil: 0, fogUntil: 0, banana: false, swapPending: false });
+      if (refill && !p.prank) p.prank = pick(PRANKS);
     }
     this.reveal = null;
     this.phase = "spin";
@@ -475,8 +551,25 @@ export class Room extends DurableObject<Env> {
     const ranked = this.ranked();
     const rankBefore = Object.fromEntries(ranked.map((p) => [p.id, this.rankOf(p)]));
     const leader = ranked[0];
+    const frozen = new Set(everyone.filter((p) => p.frozenUntil > this.qStart));
+
+    // Swaps happen before anything is counted, so the stolen answer is the one that scores.
+    const extra: Record<string, string[]> = Object.fromEntries(everyone.map((p) => [p.id, []]));
+    for (const p of shuffle(everyone.filter((o) => o.swapPending))) {
+      const partner = pick(everyone.filter((o) => o !== p && o.answer !== null));
+      if (p.answer === null || !partner) { extra[p.id].push("🔄 swap fizzled"); continue; }
+      [p.answer, partner.answer] = [partner.answer, p.answer];
+      [p.answeredAt, partner.answeredAt] = [partner.answeredAt, p.answeredAt];
+      extra[p.id].push(`🔄 swapped with ${partner.name}`);
+      extra[partner.id].push(`🔄 ${p.name} swapped with you`);
+    }
+
     const counts = q.options.map(() => 0);
     for (const p of everyone) if (p.answer !== null) counts[p.answer]++;
+    for (const p of everyone) {
+      if (p.answer === null) p.stats.ghost++;
+      else if (counts[p.answer] === 1 && q.kind === "quiz" && p.answer !== q.correct) p.stats.loneWolf++;
+    }
     const mult = this.mod === "double" ? 2 : 1;
     const results: Record<string, Result> = {};
     let winners: number[] = [];
@@ -484,38 +577,48 @@ export class Room extends DurableObject<Env> {
 
     if (q.kind === "quiz") {
       winners = [q.correct];
-      const right = everyone.filter((p) => p.answer === q.correct).sort((a, b) => a.answeredAt - b.answeredAt);
+      const opposite = this.mod === "opposite";
+      const scores = (p: Player) => p.answer !== null && (opposite ? p.answer !== q.correct : p.answer === q.correct);
+      const right = everyone.filter(scores).sort((a, b) => a.answeredAt - b.answeredAt);
       const fastest = right[0];
       for (const p of everyone) {
         const correct = p.answer === q.correct;
-        p.streak = correct ? p.streak + 1 : 0;
+        const scored = scores(p);
+        if (!opposite) p.streak = correct ? p.streak + 1 : 0;
+        if (correct) p.stats.slowestRight = Math.max(p.stats.slowestRight, p.answeredAt);
         let delta = 0;
-        const notes: string[] = [];
-        if (correct) {
+        const notes: string[] = [...extra[p.id]];
+        if (scored) {
           if (this.mod === "jackpot") {
             delta = p === fastest ? 2000 : 0;
             notes.push(p === fastest ? "🎰 JACKPOT" : "too slow for the jackpot");
           } else {
             delta = Math.round(1000 * (1 - (0.5 * Math.min(p.answeredAt, this.qDuration)) / this.qDuration));
-            if (p.streak >= 2) {
+            if (opposite) notes.push("🔄 gloriously wrong");
+            else if (p.streak >= 2) {
               delta += 100 * Math.min(p.streak - 1, 5);
               notes.push(`🔥 ${p.streak} streak`);
             }
           }
           delta *= mult;
+        } else if (opposite && correct) {
+          delta -= 300;
+          notes.push("🔄 too smart for your own good");
         } else if (this.mod === "mines") {
           delta -= 300;
           notes.push("💣 boom");
         }
         if (p.allInActive) {
-          if (correct) { delta *= 2; notes.push("🎲 all-in paid off"); }
-          else { delta -= 500; notes.push("🎲 all-in busted"); }
+          if (scored) { delta *= 2; notes.push("🎲 all-in paid off"); }
+          else { delta -= 500; p.stats.allInLost += 500; notes.push("🎲 all-in busted"); }
         }
-        results[p.id] = { delta, correct, note: notes.join(" · ") };
+        results[p.id] = { delta, correct: scored, note: notes.join(" · ") };
       }
-      headline = right.length === 0
-        ? "Nobody got it 💀"
-        : `${right.length}/${everyone.length} got it · fastest: ${fastest.emoji} ${fastest.name}`;
+      headline = opposite
+        ? right.length ? `🔄 ${right.length}/${everyone.length} got it wonderfully wrong` : "🔄 Everyone got it right. On Opposite Day. Embarrassing."
+        : right.length === 0
+          ? "Nobody got it 💀"
+          : `${right.length}/${everyone.length} got it · fastest: ${fastest.emoji} ${fastest.name}`;
       if (this.mod === "heist" && fastest && leader && leader !== fastest && leader.score > 0) {
         const loot = Math.round(leader.score * 0.2);
         results[leader.id].delta -= loot;
@@ -530,27 +633,99 @@ export class Room extends DurableObject<Env> {
         const target = this.mod === "contrarian" ? Math.min(...picked.map(([c]) => c)) : Math.max(...picked.map(([c]) => c));
         winners = picked.filter(([c]) => c === target).map(([, i]) => i);
       }
+      const crowned = winners.map((i) => this.players.get(this.voteIds[i])).filter((p): p is Player => !!p);
+      const title = voteTitle(q.text);
+      for (const p of crowned) p.titles.push(title);
       for (const p of everyone) {
         const won = p.answer !== null && winners.includes(p.answer);
         let delta = won ? 500 * mult : 0;
-        let note = won ? "you read the room" : p.answer === null ? "didn't vote" : "outvoted";
+        const notes = [...extra[p.id], won ? "you read the room" : p.answer === null ? "didn't vote" : "outvoted"];
+        if (crowned.includes(p)) notes.push("👑 that's you");
         if (p.allInActive) {
-          if (won) { delta *= 2; note += " · 🎲 all-in paid off"; }
-          else { delta -= 500; note += " · 🎲 all-in busted"; }
+          if (won) { delta *= 2; notes.push("🎲 all-in paid off"); }
+          else { delta -= 500; p.stats.allInLost += 500; notes.push("🎲 all-in busted"); }
         }
-        results[p.id] = { delta, correct: null, note };
+        results[p.id] = { delta, correct: null, note: notes.join(" · ") };
       }
-      const names = winners.map((i) => q.options[i]).join(" & ");
       headline = !winners.length
         ? "Nobody voted. Cowards."
-        : this.mod === "contrarian" ? `🙃 Minority wins: ${names}` : `The team has spoken: ${names}`;
+        : `👑 ${title}${this.mod === "contrarian" ? " (by the slimmest minority)" : ""}`;
     }
 
+    if (this.mod === "robin") {
+      const after = everyone.map((p) => ({ p, score: p.score + results[p.id].delta })).sort((a, b) => b.score - a.score);
+      const top = after[0], bottom = after[after.length - 1];
+      if (after.length >= 2 && top.score !== bottom.score) {
+        results[top.p.id].delta = bottom.score - top.p.score;
+        results[bottom.p.id].delta = top.score - bottom.p.score;
+        results[top.p.id].note = [results[top.p.id].note, `🏹 swapped scores with ${bottom.p.name}`].filter(Boolean).join(" · ");
+        results[bottom.p.id].note = [results[bottom.p.id].note, `🏹 swapped scores with ${top.p.name}`].filter(Boolean).join(" · ");
+        headline = `🏹 Robin Hood! ${top.p.name} and ${bottom.p.name} swap scores`;
+      }
+    }
+
+    const roast = this.roastFor(q, counts, winners, results, frozen);
     for (const p of everyone) p.score += results[p.id].delta;
     const picks = Object.fromEntries(everyone.map((p) => [p.id, p.answer]));
-    this.reveal = { counts, winners, headline, results, rankBefore, picks };
+    this.reveal = { counts, winners, headline, results, rankBefore, picks, roast };
     this.phase = "reveal";
     this.broadcast();
+  }
+
+  // One line of trash talk for the big screen, picked from whatever went wrong this round.
+  private roastFor(q: Question, counts: number[], winners: number[], results: Record<string, Result>, frozen: Set<Player>): string {
+    const everyone = [...this.players.values()];
+    const answered = everyone.filter((p) => p.answer !== null);
+    const lines: string[] = [];
+    const busted = everyone.filter((p) => p.allInActive && results[p.id].delta < 0);
+    if (busted.length) lines.push(`${pick(busted).name} went All-in and lost 500. Thoughts and prayers.`);
+    const ghosts = everyone.filter((p) => p.answer === null && p.ws);
+    if (ghosts.length === 1) lines.push(`${ghosts[0].name} didn't answer. Probably replying to a Slack thread.`);
+    else if (ghosts.length > 1) lines.push(`${ghosts.length} people didn't answer. Mentally already on the weekend.`);
+    if (q.kind === "quiz") {
+      const opposite = this.mod === "opposite";
+      const wrong = answered.filter((p) => p.answer !== q.correct);
+      const right = answered.filter((p) => p.answer === q.correct);
+      const popular = counts.map((c, i) => [c, i]).filter(([, i]) => i !== q.correct).sort((a, b) => b[0] - a[0])[0];
+      if (opposite && right.length) lines.push(`${pick(right).name} got it right on Opposite Day. Couldn't help themselves.`);
+      if (!opposite && popular && popular[0] >= 2 && popular[0] > counts[q.correct]) lines.push(`${popular[0]} of you went with "${q.options[popular[1]]}". Bold.`);
+      const lone = wrong.filter((p) => counts[p.answer!] === 1);
+      if (!opposite && lone.length === 1 && answered.length >= 3) lines.push(`${lone[0].name} was the only one who picked "${q.options[lone[0].answer!]}". Brave.`);
+      if (!opposite && !right.length && answered.length >= 2) lines.push("Not one of you. Incredible work, team.");
+      if (!opposite && answered.length >= 3 && right.length === everyone.length) lines.push("Everyone got it. Too easy, or you're all googling.");
+      const quick = [...answered].sort((a, b) => a.answeredAt - b.answeredAt)[0];
+      if (!opposite && quick && quick.answer !== q.correct && quick.answeredAt < 4000) lines.push(`${quick.name} answered in ${(quick.answeredAt / 1000).toFixed(1)}s and was wrong. Confidence is a choice.`);
+      const iced = [...frozen].filter((p) => p.answer !== q.correct);
+      if (iced.length) lines.push(`${pick(iced).name} got frozen and never recovered.`);
+    } else {
+      const self = answered.filter((p) => this.voteIds[p.answer!] === p.id);
+      if (self.length) lines.push(`${pick(self).name} voted for themselves. Respect.`);
+      if (winners.length === 1 && answered.length >= 3 && counts[winners[0]] === answered.length) {
+        lines.push(`Unanimous. ${this.players.get(this.voteIds[winners[0]])?.name ?? "You"}, you know what you did.`);
+      } else if (winners.length === 1 && counts[winners[0]] >= 2) {
+        lines.push(`${counts[winners[0]]} votes for ${this.players.get(this.voteIds[winners[0]])?.name}. HR has been notified.`);
+      }
+      if (winners.length >= 3) lines.push(`A ${winners.length}-way tie. Nobody wants to commit, just like sprint planning.`);
+    }
+    return lines.length ? pick(lines) : "";
+  }
+
+  // The superlatives shown before the podium. Each needs a clear "winner", or it's skipped.
+  private awards(): Award[] {
+    const ps = [...this.players.values()];
+    const out: Award[] = [];
+    const most = (f: (p: Player) => number) => ps.filter((p) => f(p) > 0).sort((a, b) => f(b) - f(a))[0];
+    const add = (p: Player | undefined, emoji: string, title: string, desc: (p: Player) => string) => p && out.push({ emoji, title, desc: desc(p), id: p.id });
+    add(most((p) => p.stats.allInLost), "🎲", "Overconfident", (p) => `lost ${p.stats.allInLost} going All-in`);
+    add(most((p) => p.stats.slowestRight), "🦥", "Sloth", (p) => `took ${(p.stats.slowestRight / 1000).toFixed(1)}s to get one right`);
+    add(most((p) => p.stats.loneWolf), "🐺", "Lone Wolf", (p) => `the only one on a wrong answer ${p.stats.loneWolf}×`);
+    add(most((p) => p.stats.reacts), "⌨️", "Keyboard Warrior", (p) => `sent ${p.stats.reacts} reactions`);
+    add(most((p) => p.stats.pranked), "🎯", "Most Wanted", (p) => `pranked ${p.stats.pranked}×`);
+    add(most((p) => p.stats.ghost), "👻", "Ghost", (p) => `didn't answer ${p.stats.ghost}×`);
+    const ranked = this.ranked();
+    if (ranked.length >= 3) add(ranked[ranked.length - 1], "🏅", "Participation Trophy", () => "came last, but showed up");
+    for (const p of ps) for (const t of p.titles) out.push({ emoji: "👑", title: "By popular vote", desc: t, id: p.id });
+    return out;
   }
 
   private clearTimer() {
@@ -606,6 +781,7 @@ export class Room extends DurableObject<Env> {
       allMods: (Object.keys(MODS) as ModId[]).map((id) => this.modInfo(id)),
       queue: gm ? this.questions.map((q, i) => ({ i, ...q })).slice(this.qi + 1) : [],
       reveal: this.phase === "reveal" ? this.reveal : null,
+      awards: this.phase === "end" ? this.awards() : [],
     };
   }
 
@@ -622,9 +798,10 @@ export class Room extends DurableObject<Env> {
       role: "player",
       me: {
         id: p.id, name: p.name, emoji: p.emoji, score: p.score, streak: p.streak, rank: this.rankOf(p),
-        answer: p.answer, allInUsed: p.allInUsed, allInActive: p.allInActive, iceUsed: p.iceUsed,
-        frozenUntil: p.frozenUntil, frozenBy: p.frozenBy,
+        answer: p.answer, allInUsed: p.allInUsed, allInActive: p.allInActive, prank: p.prank, swapPending: p.swapPending,
+        frozenUntil: p.frozenUntil, frozenBy: p.frozenBy, fogUntil: p.fogUntil, fogBy: p.fogBy, banana: p.banana,
       },
+      awards: this.phase === "end" ? this.awards().filter((a) => a.id === p.id) : [],
       playerCount: this.players.size,
       q: q && options.length ? { kind: q.kind, text: q.text, options } : null,
       result: this.phase === "reveal" && r ? r.results[p.id] ?? null : null,

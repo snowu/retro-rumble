@@ -293,6 +293,27 @@ body.gm-host #cpbtn { display: block; }
   .reacts { left: 50%; right: auto; bottom: 16px; transform: translateX(-50%); border: 1px solid var(--border); border-radius: 999px; padding: 6px 12px; background: var(--surface); }
 }
 @media (min-width: 760px) and (hover: hover) { .answer kbd { display: inline-block; } }
+/* chaos rounds */
+.fx-upside { transform: rotate(180deg); } /* on the wrapper: the pop animation owns the text's own transform */
+.fx-blurry .qtext, .fx-blurry .otext { animation: unblur calc(var(--dur) * .6) linear var(--late) both; }
+@keyframes unblur { from { filter: blur(14px); } 75% { filter: blur(3px); } to { filter: blur(0); } }
+.fx-wobbly .answer, .fx-wobbly .tile { animation: drift1 2.3s ease-in-out var(--late) infinite; }
+.fx-wobbly .answer:nth-child(2n), .fx-wobbly .tile:nth-child(2n) { animation-name: drift2; animation-duration: 1.9s; }
+.fx-wobbly .answer:nth-child(3n), .fx-wobbly .tile:nth-child(3n) { animation-name: drift3; animation-duration: 2.7s; }
+@keyframes drift1 { 25% { transform: translate(22px, -10px) rotate(4deg); } 50% { transform: translate(-6px, 14px) rotate(-3deg); } 75% { transform: translate(-24px, -6px) rotate(5deg); } }
+@keyframes drift2 { 25% { transform: translate(-18px, 12px) rotate(-5deg); } 50% { transform: translate(20px, 4px) rotate(3deg); } 75% { transform: translate(4px, -16px) rotate(-2deg); } }
+@keyframes drift3 { 33% { transform: translate(14px, 16px) rotate(6deg) scale(.95); } 66% { transform: translate(-20px, -8px) rotate(-4deg) scale(1.05); } }
+.fog { position: fixed; inset: 0; z-index: 14; pointer-events: none; backdrop-filter: blur(7px); display: grid; place-items: start center; padding-top: 18px;
+  background: radial-gradient(circle at 20% 30%, #9a8a7acc 0 14%, transparent 30%), radial-gradient(circle at 75% 55%, #8a7f70cc 0 16%, transparent 34%), radial-gradient(circle at 40% 80%, #a3968599 0 12%, transparent 28%), radial-gradient(circle at 85% 15%, #7d736899 0 10%, transparent 24%), #6b5f5244; }
+.fog span { background: #120a26dd; border-radius: 999px; padding: 8px 16px; font-weight: 800; }
+.roast { text-align: center; font-size: clamp(1rem, 1.8vw, 1.3rem); font-style: italic; color: var(--yellow); margin: -6px 0 0; }
+.awards { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 230px), 1fr)); gap: 12px; width: min(1100px, 100%); }
+.award { background: var(--surface); border: 1px solid var(--border); border-radius: 18px; padding: 14px 16px; display: grid; grid-template-columns: auto 1fr; gap: 2px 14px; align-items: center; text-align: left; animation: pop .5s cubic-bezier(.2, 1.6, .4, 1) both; }
+.award .ae { grid-row: span 3; font-size: 2.4rem; }
+.award b { font-family: Bungee, sans-serif; font-size: .95rem; color: var(--yellow); }
+.award .who { font-weight: 800; font-size: 1.1rem; }
+.award small { color: var(--muted); }
+.phone .awards { width: 100%; }
 .reacts button { font-size: 1.7rem; background: none; padding: 4px 6px; border-radius: 10px; }
 .reacts button:active { transform: scale(1.4); }
 </style>
@@ -405,6 +426,22 @@ Hindi
 *Mandarin Chinese
 
 vote: Who is the MVP of this sprint?
+
+vote: Who is most likely to reply-all to the whole company?
+
+vote: Who has the most unread Slack messages right now?
+
+vote: Who is most likely to say "quick question" and take an hour?
+
+vote: Who would accidentally join a meeting with the camera on in bed?
+
+vote: Who is most likely to fix a bug by deleting the test?
+
+vote: Who would last the shortest on a desert island?
+
+vote: Who is secretly running the company?
+
+vote: Who is most likely to still be on mute when it's their turn?
 `;
 
 const COLORS = ["#ff3d6e", "#2d8cff", "#ffb020", "#22c55e", "#a855f7", "#14b8a6", "#f97316", "#ec4899", "#84cc16", "#06b6d4"];
@@ -422,6 +459,7 @@ const params = new URLSearchParams(location.search);
 // GitHub Pages only serves the page; rooms live on the Cloudflare Worker.
 const API = location.hostname.endsWith("github.io") ? "https://retro-rumble.zancato-t.workers.dev" : location.origin;
 
+let endTimer = 0;
 let ws = null, role = null, room = null, state = null, offset = 0, lastKey = "", seenPlayers = new Set();
 let mine = null, mineState = null, mineFrozen = false; // the host's own player seat in Play-along mode
 const SECONDS = [15, 20, 30, 45, 60];
@@ -683,6 +721,18 @@ const tileStyle = (i) => `background:${COLORS[i % COLORS.length]}`;
 const colorVar = (i) => `--c:${COLORS[i % COLORS.length]}`;
 const shapeChip = (i) => `<span class="shape-chip">${SHAPES[i % SHAPES.length]}</span>`;
 const modBadge = (m) => `<span class="modbadge" style="--c:${m.color}">${m.emoji} <b>${esc(m.label)}</b> <span>· ${esc(m.desc)}</span></span>`;
+// Chaos rounds are just CSS on the question screen. --late keeps the animations in step across re-renders.
+function fxAttrs(s, part = "opts") {
+  const cls = { wobbly: "fx-wobbly", blurry: "fx-blurry", ...(part === "q" ? { upside: "fx-upside" } : {}) }[s.mod.id] || "";
+  const late = -Math.max(0, serverNow() - (s.deadline - s.duration));
+  return `class="${cls}" style="--dur:${s.duration}ms;--late:${late}ms"`;
+}
+const PRANK_INFO = {
+  ice: ["🧊", "Ice the leader", "freeze them 5s"],
+  banana: ["🍌", "Banana", "shuffle someone's buttons"],
+  fog: ["🌫️", "Fog", "smear someone's screen"],
+  swap: ["🔄", "Swap", "trade answers at the reveal"],
+};
 const qcount = (s) => `<span class="qcount"><b>Question ${s.qi + 1}</b> of ${s.total}</span>`;
 
 function renderHost(fresh) {
@@ -808,11 +858,13 @@ function renderHost(fresh) {
       app.innerHTML = `
         <div class="host">
           <div class="topbar">${qcount(s)}${modBadge(s.mod)}</div>
-          <h1 class="qtext pop">${esc(s.q.text)}</h1>
-          <div class="timer"><div class="timer-fill"></div><span class="timer-num"></span></div>
-          <div class="tiles ${s.q.options.length <= 4 ? "four" : ""}">
-            ${s.q.options.map((o, i) => `<div class="tile pop" data-i="${i}" style="${colorVar(i)}">${shapeChip(i)}${esc(o)}</div>`).join("")}
+          <div ${fxAttrs(s, "q")}>
+            <h1 class="qtext pop">${esc(s.q.text)}</h1>
           </div>
+          <div class="timer"><div class="timer-fill"></div><span class="timer-num"></span></div>
+          <div ${fxAttrs(s)}><div class="tiles ${s.q.options.length <= 4 ? "four" : ""}">
+            ${s.q.options.map((o, i) => `<div class="tile pop" data-i="${i}" style="${colorVar(i)}">${shapeChip(i)}<span class="otext">${esc(o)}</span></div>`).join("")}
+          </div></div>
           <div class="live" id="live"></div>
           <div class="host-foot"><button class="ghost" id="skip">Reveal now ⏭</button></div>
         </div>`;
@@ -845,7 +897,8 @@ function renderHost(fresh) {
       <div class="host">
         <div class="topbar">${qcount(s)}${modBadge(s.mod)}</div>
         <h2 class="qtext small">${esc(s.q.text)}</h2>
-        <div class="verdict pop">${pill}${vote && r.winners.length ? "" : `<span>${esc(r.headline)}</span>`}</div>
+        <div class="verdict pop">${pill}<span>${esc(r.headline)}</span></div>
+        ${r.roast ? `<p class="roast pop">${esc(r.roast)}</p>` : ""}
         <div class="reveal-grid">
           <div class="rtiles ${s.q.options.length <= 4 ? "four" : ""}">
             ${s.q.options.map((o, i) => {
@@ -881,18 +934,41 @@ function renderHost(fresh) {
 
   if (s.phase === "end") {
     if (!fresh) return;
-    const [a, b, c] = s.players;
-    const col = (p, cls, n) => p ? `<div class="col ${cls}"><span class="av">${p.emoji}</span><span class="nm">${esc(p.name)}</span><span class="muted">${p.score}</span><div class="block">${n}</div></div>` : "";
-    app.innerHTML = `
-      <div class="host end">
-        <h1 class="brand">CHAMPIONS</h1>
-        <div class="podium">${col(b, "p2", 2)}${col(a, "p1", 1)}${col(c, "p3", 3)}</div>
-        <div class="rest">${s.players.slice(3).map((p) => `${p.rank}. ${p.emoji} ${esc(p.name)} · ${p.score}`).join(" &nbsp;·&nbsp; ")}</div>
-        <button class="big" id="again">Run it back 🔁</button>
-      </div>`;
-    sfx.fanfare();
-    setTimeout(confetti, 1300);
-    $("#again").onclick = () => sendMsg({ t: "again" });
+    clearTimeout(endTimer);
+    // Awards first, one card at a time, then the podium.
+    const podium = () => {
+      clearTimeout(endTimer);
+      if (state?.phase !== "end") return;
+      const [a, b, c] = state.players;
+      const col = (p, cls, n) => p ? `<div class="col ${cls}"><span class="av">${p.emoji}</span><span class="nm">${esc(p.name)}</span><span class="muted">${p.score}</span><div class="block">${n}</div></div>` : "";
+      app.innerHTML = `
+        <div class="host end">
+          <h1 class="brand">CHAMPIONS</h1>
+          <div class="podium">${col(b, "p2", 2)}${col(a, "p1", 1)}${col(c, "p3", 3)}</div>
+          <div class="rest">${state.players.slice(3).map((p) => `${p.rank}. ${p.emoji} ${esc(p.name)} · ${p.score}`).join(" &nbsp;·&nbsp; ")}</div>
+          <div class="lobby-actions">${state.awards.length ? `<button class="ghost" id="reawards">🏅 Awards again</button>` : ""}<button class="big" id="again">Run it back 🔁</button></div>
+        </div>`;
+      sfx.fanfare();
+      setTimeout(confetti, 1300);
+      $("#again").onclick = () => sendMsg({ t: "again" });
+      $("#reawards") && ($("#reawards").onclick = awards);
+    };
+    const awards = () => {
+      const list = state.awards.slice(0, 12);
+      if (!list.length) return podium();
+      app.innerHTML = `
+        <div class="host end">
+          <h1 class="brand">SPECIAL AWARDS</h1>
+          <div class="awards">${list.map((a, k) => {
+            const p = state.players.find((x) => x.id === a.id);
+            return p ? `<div class="award" style="animation-delay:${0.5 + k * 0.8}s"><span class="ae">${a.emoji}</span><b>${esc(a.title)}</b><span class="who">${p.emoji} ${esc(p.name)}</span><small>${esc(a.desc)}</small></div>` : "";
+          }).join("")}</div>
+          <button class="big" id="topodium">And the winner is… 🏆</button>
+        </div>`;
+      $("#topodium").onclick = podium;
+      endTimer = setTimeout(podium, 4500 + list.length * 800);
+    };
+    awards();
   }
 }
 
@@ -906,25 +982,31 @@ function renderPlayer(fresh) {
   if (s.phase === "lobby") {
     body = `<div class="center"><div class="huge pop" style="animation:wobble 2s infinite">${me.emoji}</div><h2 class="display pop">You're in!</h2>
       <p class="muted">Eyes on the shared screen. ${s.playerCount} player${s.playerCount > 1 ? "s" : ""} so far.</p>
-      ${s.powerups ? `<p class="muted">🎲 <b>All-in</b> and 🧊 <b>Ice the leader</b> can each be used once per game. Use them wisely. Or don't.</p>` : ""}</div>`;
+      ${s.powerups ? `<p class="muted">🎲 <b>All-in</b> once per game, plus a prank card: ${PRANK_INFO[me.prank]?.[0] ?? "🃏"} <b>${esc(PRANK_INFO[me.prank]?.[1] ?? "a prank")}</b>. Used cards get refilled every few questions.</p>` : ""}</div>`;
   } else if (s.phase === "spin") {
     body = `<div class="phone-wheel">${wheelHTML(s)}</div>`;
   } else if (s.phase === "question" && s.q) {
     const answered = me.answer !== null;
     const pickedText = answered ? s.q.options.find((o) => o.i === me.answer)?.text : "";
+    // Scrambled or banana'd buttons colour by position, so they stop matching the big screen.
+    const byPos = s.mod.id === "scramble" || me.banana;
+    const pr = PRANK_INFO[me.prank];
     body = `
       ${modBadge(s.mod)}
-      <h2 class="qtext">${esc(s.q.text)}</h2>
+      <div ${fxAttrs(s, "q")}><h2 class="qtext">${esc(s.q.text)}</h2></div>
       <div class="timer"><div class="timer-fill"></div><span class="timer-num"></span></div>
       ${answered
         ? `<div class="center"><div class="huge">🤞</div><h2 class="display">Locked in</h2><p>${esc(pickedText)}</p>${me.allInActive ? `<p class="up"><b>🎲 ALL-IN</b></p>` : ""}</div>`
-        : `<div class="answers ${s.q.options.length > 4 ? "many" : ""}">
-            ${s.q.options.map((o, pos) => `<button class="answer pop" data-i="${o.i}" style="${tileStyle(s.mod.id === "scramble" ? pos : o.i)}"><span>${SHAPES[(s.mod.id === "scramble" ? pos : o.i) % SHAPES.length]}</span>${esc(o.text)}${pos < 9 ? `<kbd>${pos + 1}</kbd>` : ""}</button>`).join("")}
-          </div>`}
+        : `<div ${fxAttrs(s)}><div class="answers ${s.q.options.length > 4 ? "many" : ""}">
+            ${s.q.options.map((o, pos) => `<button class="answer ${fresh ? "pop" : ""}" data-i="${o.i}" style="${tileStyle(byPos ? pos : o.i)}"><span>${SHAPES[(byPos ? pos : o.i) % SHAPES.length]}</span><span class="otext">${esc(o.text)}</span>${pos < 9 ? `<kbd>${pos + 1}</kbd>` : ""}</button>`).join("")}
+          </div></div>`}
       ${!s.powerups ? "" : `<div class="powers">
         <button class="power ${me.allInActive ? "on" : ""}" id="allin" ${me.allInUsed || answered ? "disabled" : ""}>🎲 ${me.allInActive ? "ALL-IN!" : "All-in"}<br><small class="muted">2× or −500</small></button>
-        <button class="power" id="ice" ${me.iceUsed ? "disabled" : ""}>🧊 Ice the leader<br><small class="muted">freeze them 5s</small></button>
+        ${me.swapPending
+          ? `<button class="power on" disabled>🔄 Swap armed<br><small class="muted">happens at the reveal</small></button>`
+          : `<button class="power" id="prank" ${pr ? "" : "disabled"}>${pr ? `${pr[0]} ${pr[1]}<br><small class="muted">${pr[2]}</small>` : `🃏 No prank<br><small class="muted">refill soon</small>`}</button>`}
       </div>`}
+      ${serverNow() < me.fogUntil ? `<div class="fog"><span>🌫️ ${esc(me.fogBy)} fogged your screen</span></div>` : ""}
       ${serverNow() < me.frozenUntil ? `<div class="frozen"><div class="huge">🧊</div><div>FROZEN by ${esc(me.frozenBy)}</div><div class="secs" id="fsecs"></div></div>` : ""}`;
   } else if (s.phase === "reveal") {
     const r = s.result || { delta: 0, correct: null, note: "" };
@@ -935,20 +1017,22 @@ function renderPlayer(fresh) {
       ${r.note ? `<p><b>${esc(r.note)}</b></p>` : ""}
       ${s.q && s.winners.length ? `
         <div class="muted">${s.q.kind === "vote" ? "The team picked" : "Correct answer"}</div>
-        ${s.q.options.map((o, pos) => s.winners.includes(o.i) ? `<div class="answer correct-card pop" style="${tileStyle(s.mod.id === "scramble" ? pos : o.i)}"><span>${SHAPES[(s.mod.id === "scramble" ? pos : o.i) % SHAPES.length]}</span>${esc(o.text)}</div>` : "").join("")}
+        ${s.q.options.map((o, pos) => s.winners.includes(o.i) ? `<div class="answer correct-card pop" style="${tileStyle(s.mod.id === "scramble" || me.banana ? pos : o.i)}"><span>${SHAPES[(s.mod.id === "scramble" || me.banana ? pos : o.i) % SHAPES.length]}</span>${esc(o.text)}</div>` : "").join("")}
         ${me.answer !== null && !s.winners.includes(me.answer) ? `<p class="muted">You picked: <b>${esc(s.q.options.find((o) => o.i === me.answer)?.text ?? "")}</b></p>` : ""}` : ""}
       <h2 class="display">#${me.rank} <span class="muted">of ${s.playerCount}</span></h2>
     </div>`;
   } else if (s.phase === "end") {
     const medal = ["🥇", "🥈", "🥉"][me.rank - 1] || "🫡";
-    body = `<div class="center"><div class="huge pop">${medal}</div><h2 class="display">#${me.rank} of ${s.playerCount}</h2><p class="result-delta">${me.score}</p><p class="muted">GG. Now back to the action items.</p></div>`;
+    body = `<div class="center"><div class="huge pop">${medal}</div><h2 class="display">#${me.rank} of ${s.playerCount}</h2><p class="result-delta">${me.score}</p>
+      ${s.awards.length ? `<div class="awards">${s.awards.map((a) => `<div class="award"><span class="ae">${a.emoji}</span><b>${esc(a.title)}</b><small>${esc(a.desc)}</small></div>`).join("")}</div>` : ""}
+      <p class="muted">GG. Now back to the action items.</p></div>`;
   }
 
   app.innerHTML = `<div class="phone">${head}${body}</div>${reacts}`;
   document.querySelectorAll(".answer").forEach((b) => (b.onclick = () => { navigator.vibrate?.(30); sendMsg({ t: "answer", i: +b.dataset.i }); }));
   document.querySelectorAll(".reacts button").forEach((b) => (b.onclick = () => sendMsg({ t: "react", e: b.dataset.e })));
   $("#allin") && ($("#allin").onclick = () => sendMsg({ t: "allin" }));
-  $("#ice") && ($("#ice").onclick = () => sendMsg({ t: "ice" }));
+  $("#prank") && ($("#prank").onclick = () => sendMsg({ t: "prank" }));
   if ($(".frozen")) navigator.vibrate?.([80, 40, 80]);
   if (s.phase === "spin") spinWheel(s);
   if (s.phase === "reveal" && fresh) navigator.vibrate?.(s.result?.delta > 0 ? 60 : [40, 60, 40]);
@@ -1173,7 +1257,7 @@ function renderMine() {
     else html += `<span class="display">👆 Click a card to answer</span>`;
     if (s.powerups) html += `
       <button class="power ${me.allInActive ? "on" : ""}" data-p="allin" ${me.allInUsed || answered ? "disabled" : ""}>🎲 ${me.allInActive ? "ALL-IN!" : "All-in"}</button>
-      <button class="power" data-p="ice" ${me.iceUsed ? "disabled" : ""}>🧊 Ice</button>`;
+      ${me.swapPending ? `<button class="power on" disabled>🔄 Swap armed</button>` : `<button class="power" data-p="prank" ${me.prank ? "" : "disabled"}>${me.prank ? PRANK_INFO[me.prank].slice(0, 2).join(" ") : "🃏 No prank"}</button>`}`;
   } else if (s.phase === "reveal" && s.result) {
     const r = s.result;
     html += `<span class="display ${r.delta > 0 ? "up" : r.delta < 0 ? "down" : "muted"}">${r.delta > 0 ? "+" : ""}${r.delta}</span>${r.note ? `<span class="muted">${esc(r.note)}</span>` : ""}<span class="muted">#${me.rank}</span>`;
@@ -1272,8 +1356,8 @@ function renderPanel() {
       const f = state.me.frozenUntil - serverNow();
       const fs = $("#fsecs");
       if (fs) fs.textContent = Math.max(0, Math.ceil(f / 1000));
-      if ($(".frozen") && f <= 0) render();
-      else if (!$(".frozen") && f > 0) render();
+      const fogged = serverNow() < state.me.fogUntil;
+      if (!!$(".frozen") !== f > 0 || !!$(".fog") !== fogged) render();
     }
   }
   requestAnimationFrame(loop);
