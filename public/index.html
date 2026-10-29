@@ -295,8 +295,6 @@ body.gm-host #cpbtn { display: block; }
 }
 @media (min-width: 760px) and (hover: hover) { .answer kbd { display: inline-block; } }
 /* chaos rounds */
-.fx-blurry .qtext, .fx-blurry .otext { animation: unblur calc(var(--dur) * .6) linear var(--late) both; }
-@keyframes unblur { from { filter: blur(14px); } 75% { filter: blur(3px); } to { filter: blur(0); } }
 .fog { position: fixed; inset: 0; z-index: 14; pointer-events: none; backdrop-filter: blur(7px); display: grid; place-items: start center; padding-top: 18px;
   background: radial-gradient(circle at 20% 30%, #9a8a7acc 0 14%, transparent 30%), radial-gradient(circle at 75% 55%, #8a7f70cc 0 16%, transparent 34%), radial-gradient(circle at 40% 80%, #a3968599 0 12%, transparent 28%), radial-gradient(circle at 85% 15%, #7d736899 0 10%, transparent 24%), #6b5f5244; }
 .fog span { background: #120a26dd; border-radius: 999px; padding: 8px 16px; font-weight: 800; }
@@ -311,7 +309,6 @@ body.gm-host #cpbtn { display: block; }
 /* draw rounds */
 .inkwrap { background: #fff; border-radius: 16px; overflow: hidden; aspect-ratio: 1; width: 100%; box-shadow: 0 0 0 3px var(--line); }
 .inkwrap canvas { display: block; width: 100%; height: 100%; touch-action: none; }
-.fx-blurry canvas.ink { animation: unblur calc(var(--dur) * .6) linear var(--late) both; }
 .drawgrid { display: grid; grid-template-columns: min(66vh, 52vw) 1fr; gap: 28px; align-items: start; justify-content: center; }
 @media (max-width: 860px) { .drawgrid { grid-template-columns: 1fr; } }
 .drawside { display: grid; gap: 14px; align-content: start; }
@@ -793,12 +790,6 @@ const colorVar = (i) => `--c:${COLORS[i % COLORS.length]}`;
 const shapeChip = (i) => `<span class="shape-chip">${SHAPES[i % SHAPES.length]}</span>`;
 // Rounds that skip the wheel show their round type instead of a modifier.
 const modBadge = (m) => ["who", "dvote", "write"].includes(state?.q?.kind) ? `<span class="muted">${KIND_LABEL[state.q.kind]}</span>` : `<span class="modbadge" style="--c:${m.color}">${m.emoji} <b>${esc(m.label)}</b> <span>· ${esc(m.desc)}</span></span>`;
-// Chaos rounds are just CSS on the question screen. --late keeps the animations in step across re-renders.
-function fxAttrs(s) {
-  const cls = { blurry: "fx-blurry" }[s.mod.id] || "";
-  const late = -Math.max(0, serverNow() - (s.deadline - s.duration));
-  return `class="${cls}" style="--dur:${s.duration}ms;--late:${late}ms"`;
-}
 const PRANK_INFO = {
   ice: ["🧊", "Ice the leader", "freeze them 5s"],
   banana: ["🍌", "Banana", "shuffle someone's buttons"],
@@ -1049,7 +1040,7 @@ function renderHost(fresh) {
         <div class="host" id="drawhost">
           <div class="topbar">${qcount(s)}${modBadge(s.mod)}</div>
           <div class="drawgrid">
-            <div ${fxAttrs(s)}><div class="inkwrap"><canvas class="ink"></canvas></div></div>
+            <div><div class="inkwrap"><canvas class="ink"></canvas></div></div>
             <div class="drawside">
               <div class="dwho">🎨 <b>${d.drawerEmoji} ${esc(d.drawerName)}</b> is drawing</div>
               <div class="dhint" id="hhint"></div>
@@ -1076,14 +1067,14 @@ function renderHost(fresh) {
       app.innerHTML = `
         <div class="host">
           <div class="topbar">${qcount(s)}${modBadge(s.mod)}</div>
-          <div ${fxAttrs(s)}>
+          <div>
             ${s.q.kind === "who" ? `<p class="qprompt">✍️ Who wrote this answer to “${esc(s.q.prompt)}”?</p><h1 class="qtext pop quote">${esc(s.q.text)}</h1>`
               : s.q.kind === "dvote" ? `<h1 class="qtext pop">🖌️ Which <span style="color:var(--yellow)">${esc(s.q.text)}</span> is better?</h1>${duoHTML(s, "small")}`
               : `<h1 class="qtext pop">${esc(s.q.text)}</h1>`}
           </div>
           <div class="timer"><div class="timer-fill"></div><span class="timer-num"></span></div>
-          <div ${fxAttrs(s)}><div class="tiles ${s.q.options.length <= 4 ? "four" : ""}">
-            ${s.q.options.map((o, i) => `<div class="tile pop" data-i="${i}" style="${colorVar(i)}">${shapeChip(i)}<span class="otext">${esc(o)}</span></div>`).join("")}
+          <div><div class="tiles ${s.q.options.length <= 4 ? "four" : ""}">
+            ${s.q.options.map((o, i) => `<div class="tile pop" data-i="${i}" style="${colorVar(i)}">${shapeChip(i)}${esc(o)}</div>`).join("")}
           </div></div>
           <div class="live" id="live"></div>
           <div class="host-foot"><button class="ghost" id="skip">Reveal now ⏭</button></div>
@@ -1272,7 +1263,7 @@ function renderDrawPlayer() {
         : off ? `<div class="dword">🖌️ Draw-off:<b>${esc(s.q.text)}</b><small class="muted">watch them go, you vote next</small></div>`
         : `<div class="dwho" style="text-align:center">🎨 ${d.drawerEmoji} <b>${esc(d.drawerName)}</b> is drawing</div><div class="dhint" id="dhint" style="text-align:center"></div>`}
       <div class="timer"><div class="timer-fill"></div><span class="timer-num"></span></div>
-      ${artist ? `<div class="inkwrap"><canvas class="ink" id="pad" data-a="${ai}"></canvas></div>` : off ? duoHTML(s) : `<div ${fxAttrs(s)}><div class="inkwrap"><canvas class="ink"></canvas></div></div>`}
+      ${artist ? `<div class="inkwrap"><canvas class="ink" id="pad" data-a="${ai}"></canvas></div>` : off ? duoHTML(s) : `<div><div class="inkwrap"><canvas class="ink"></canvas></div></div>`}
       ${artist
         ? `<div class="tools">${INK_COLORS.map((c) => `<button class="sw" data-c="${c}" style="background:${c}" title="${c === "#ffffff" ? "Eraser" : "Colour"}"></button>`).join("")}
             <button class="sz" data-w="10">thin</button><button class="sz" data-w="28">thick</button><button class="sz" id="clear">🗑️ clear</button></div>`
@@ -1383,15 +1374,15 @@ function renderPlayer(fresh) {
     body = `
       ${modBadge(s.mod)}
       ${s.q.kind === "who" ? `<p class="qprompt">✍️ Who wrote this answer to “${esc(s.q.prompt)}”?</p>` : ""}
-      <div ${fxAttrs(s)}><h2 class="qtext ${s.q.kind === "who" ? "quote" : ""}">${s.q.kind === "dvote" ? `🖌️ Which <span style="color:var(--yellow)">${esc(s.q.text)}</span> is better?` : esc(s.q.text)}</h2></div>
+      <div><h2 class="qtext ${s.q.kind === "who" ? "quote" : ""}">${s.q.kind === "dvote" ? `🖌️ Which <span style="color:var(--yellow)">${esc(s.q.text)}</span> is better?` : esc(s.q.text)}</h2></div>
       ${s.q.kind === "dvote" ? duoHTML(s) : ""}
       <div class="timer"><div class="timer-fill"></div><span class="timer-num"></span></div>
       ${s.benched
         ? `<div class="center"><div class="huge">${s.q.kind === "who" ? "🤫" : "🖌️"}</div><h2 class="display">${s.q.kind === "who" ? "That's yours" : "Your art is on trial"}</h2><p class="muted">${s.q.kind === "who" ? "Look innocent." : "The team is voting."}</p></div>`
         : answered
         ? `<div class="center"><div class="huge">🤞</div><h2 class="display">Locked in</h2><p>${esc(pickedText)}</p>${me.allInActive ? `<p class="up"><b>🎲 ALL-IN</b></p>` : ""}</div>`
-        : `<div ${fxAttrs(s)}><div class="answers ${s.q.options.length > 4 ? "many" : ""}">
-            ${s.q.options.map((o, pos) => s.q.kind === "who" && o.text === `${me.emoji} ${me.name}` ? "" : `<button class="answer ${fresh ? "pop" : ""}" data-i="${o.i}" style="${tileStyle(byPos ? pos : o.i)}"><span>${SHAPES[(byPos ? pos : o.i) % SHAPES.length]}</span><span class="otext">${esc(o.text)}</span>${pos < 9 ? `<kbd>${pos + 1}</kbd>` : ""}</button>`).join("")}
+        : `<div><div class="answers ${s.q.options.length > 4 ? "many" : ""}">
+            ${s.q.options.map((o, pos) => s.q.kind === "who" && o.text === `${me.emoji} ${me.name}` ? "" : `<button class="answer ${fresh ? "pop" : ""}" data-i="${o.i}" style="${tileStyle(byPos ? pos : o.i)}"><span>${SHAPES[(byPos ? pos : o.i) % SHAPES.length]}</span><span>${esc(o.text)}</span>${pos < 9 ? `<kbd>${pos + 1}</kbd>` : ""}</button>`).join("")}
           </div></div>`}
       ${powersHTML(s, answered)}
       ${overlaysHTML(me)}`;

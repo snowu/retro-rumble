@@ -6,7 +6,7 @@ interface Env {
 }
 
 type Phase = "lobby" | "spin" | "question" | "reveal" | "end";
-type ModId = "vanilla" | "double" | "speed" | "mines" | "heist" | "jackpot" | "contrarian" | "opposite" | "blurry" | "robin";
+type ModId = "vanilla" | "double" | "speed" | "mines" | "heist" | "jackpot" | "contrarian" | "opposite" | "robin";
 type PrankId = "ice" | "banana" | "fog" | "swap";
 // play: the host is also a player and can't edit questions. gm: the host runs everything and doesn't answer.
 type Mode = "play" | "gm";
@@ -120,12 +120,10 @@ const MODS: Record<ModId, { label: string; emoji: string; desc: string; color: s
   jackpot: { label: "Jackpot", emoji: "🎰", desc: "Only the fastest correct answer scores: 2000", color: "#3ef08a" },
   contrarian: { label: "Contrarian", emoji: "🙃", desc: "The LEAST picked answer wins", color: "#ff8a3d" },
   opposite: { label: "Opposite Day", emoji: "🔄", desc: "Wrong answers score. The right one costs you 300.", color: "#5b8cff" },
-  blurry: { label: "Blurry", emoji: "👓", desc: "Lost my glasses. It sharpens up. Eventually.", color: "#c8d6e5" },
   robin: { label: "Robin Hood", emoji: "🏹", desc: "After this one, first and last place SWAP scores", color: "#2ecc71" },
 };
-const QUIZ_MODS: ModId[] = ["vanilla", "double", "speed", "mines", "heist", "jackpot", "opposite", "blurry", "robin"];
+const QUIZ_MODS: ModId[] = ["vanilla", "double", "speed", "mines", "heist", "jackpot", "opposite", "robin"];
 const VOTE_MODS: ModId[] = ["vanilla", "double", "speed", "contrarian", "robin"];
-const DRAW_MODS: ModId[] = ["vanilla", "double", "blurry"];
 const MAX_INK = 30000; // numbers, roughly 15k points per drawing
 const INK_COLORS = ["#111111", "#ffffff", "#e53935", "#1e88e5", "#43a047", "#fdd835", "#fb8c00", "#8e24aa", "#6d4c41"];
 const WORDS = [
@@ -788,7 +786,7 @@ export class Room extends DurableObject<Env> {
     }
     // Robin Hood is a once-a-game outrage, and only once there's something to steal.
     const robinOk = !this.robinUsed && this.players.size >= 3 && this.qi >= 3;
-    const pools: Partial<Record<Kind, ModId[]>> = { quiz: QUIZ_MODS, vote: VOTE_MODS, draw: DRAW_MODS, closest: CLOSEST_MODS, hottake: PLAIN_MODS, drawoff: PLAIN_MODS };
+    const pools: Partial<Record<Kind, ModId[]>> = { quiz: QUIZ_MODS, vote: VOTE_MODS, draw: PLAIN_MODS, closest: CLOSEST_MODS, hottake: PLAIN_MODS, drawoff: PLAIN_MODS };
     const pool = (pools[q.kind] ?? ["vanilla"]).filter((m) => this.settings.mods.includes(m) && (m !== "robin" || robinOk));
     this.modPool = pool.length ? pool : ["vanilla"];
     this.modIndex = Math.floor(Math.random() * this.modPool.length);
