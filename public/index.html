@@ -283,6 +283,11 @@ body.gm-host #cpbtn { display: block; }
 .reacts { position: fixed; bottom: 0; left: 0; right: 0; display: flex; justify-content: center; gap: 4px; padding: 10px 10px calc(10px + env(safe-area-inset-bottom)); background: #0d0820ee; border-top: 2px solid var(--line); z-index: 12; }
 .me .rank { color: var(--muted); font-weight: 600; font-size: .9rem; }
 .answer kbd { display: none; margin-left: auto; font: 700 .85rem Inter, sans-serif; background: #0003; border: 1px solid #fff4; border-radius: 6px; padding: 2px 8px; }
+.intro { flex: 1; display: grid; place-items: center; align-content: center; gap: 14px; text-align: center; padding: 20px; }
+.intro-emoji { font-size: clamp(4rem, 12vh, 7rem); line-height: 1; }
+.intro h1 { margin: 0; font-size: clamp(2rem, 6vw, 4.2rem); color: var(--yellow); }
+.intro p { margin: 0; max-width: 640px; font-size: clamp(1.05rem, 2.2vw, 1.6rem); color: var(--muted); } .intro p b { color: var(--ink); }
+.fresh .intro .pop:nth-child(2) { animation-delay: .15s; } .fresh .intro .pop:nth-child(3) { animation-delay: .3s; } .fresh .intro .pop:nth-child(4) { animation-delay: .6s; }
 /* desktop players: a roomier controller instead of a stretched phone */
 @media (min-width: 760px) {
   .phone { max-width: 900px; padding: 28px 32px 120px; gap: 18px; }
@@ -295,10 +300,26 @@ body.gm-host #cpbtn { display: block; }
   .answer { min-height: 96px; font-size: 1.3rem; padding: 20px 22px; border-radius: 18px; transition: transform .1s, filter .1s; }
   .answer:hover { transform: translateY(-2px); filter: brightness(1.1); }
   .powers { max-width: 560px; width: 100%; align-self: center; }
-  .phone .center { flex: none; align-self: center; width: min(100%, 560px); margin-top: 6vh; background: var(--surface); border: 1px solid var(--border); border-radius: 24px; padding: 36px 32px; }
+  .phone .center { flex: none; align-self: center; width: min(100%, 560px); background: var(--surface); border: 1px solid var(--border); border-radius: 24px; padding: 36px 32px; }
+  /* the header stays on top and the round sits in the middle of the screen */
+  .phone { min-height: 100vh; }
+  .phone > :first-child + * { margin-top: auto; }
+  .phone::after { content: ""; margin-top: auto; } /* equal free space above and below = centred */
+  .phone .duo .inkwrap { max-width: min(100%, 36vh); }
+  .phone .duo + .timer + .center { padding: 18px 24px; } .phone .duo + .timer + .center .huge { font-size: 3rem; }
+  .phone .inkwrap { max-width: min(100%, 52vh); }
+  .phone .intro { flex: none; }
   .reacts { left: 50%; right: auto; bottom: 16px; transform: translateX(-50%); border: 1px solid var(--border); border-radius: 999px; padding: 6px 12px; background: var(--surface); }
 }
 @media (min-width: 760px) and (hover: hover) { .answer kbd { display: inline-block; } }
+/* wide screens: power-ups dock bottom-left, emotes bottom-right, so the round gets the whole middle */
+@media (min-width: 980px) {
+  .phone .powers { position: fixed; left: 24px; bottom: 16px; width: auto; max-width: none; display: flex; gap: 8px; z-index: 12; }
+  .phone .powers .power { padding: 8px 14px; font-size: .95rem; text-align: left; }
+  .phone .powers .power br { display: none; } .phone .powers .power small { margin-left: 6px; }
+  .reacts { left: auto; right: 24px; transform: none; }
+  .phone { padding-bottom: 90px; }
+}
 /* chaos rounds */
 .fog { position: fixed; inset: 0; z-index: 14; pointer-events: none; backdrop-filter: blur(7px); display: grid; place-items: start center; padding-top: 18px;
   background: radial-gradient(circle at 20% 30%, #9a8a7acc 0 14%, transparent 30%), radial-gradient(circle at 75% 55%, #8a7f70cc 0 16%, transparent 34%), radial-gradient(circle at 40% 80%, #a3968599 0 12%, transparent 28%), radial-gradient(circle at 85% 15%, #7d736899 0 10%, transparent 24%), #6b5f5244; }
@@ -340,6 +361,7 @@ body.drawing #toasts { top: 12px; bottom: auto; } /* keep toasts off the palette
 .duo .inkwrap { max-width: min(100%, 52vh); }
 .phone .duo { gap: 8px; } .phone .duo .side { font-size: .9rem; }
 .host .duo.small { margin-top: 18px; } .host .duo.small .inkwrap { max-width: min(100%, 30vh); }
+.kindtag { text-align: center; }
 .instr { text-align: center; color: var(--muted); font-size: clamp(1rem, 1.6vw, 1.3rem); margin: -6px 0 0; }
 .qprompt { text-align: center; color: var(--cyan); font-weight: 700; font-size: clamp(1rem, 1.8vw, 1.4rem); margin: 0; }
 .quote::before { content: "“"; } .quote::after { content: "”"; }
@@ -776,6 +798,24 @@ function wheelHTML(s) {
       <div class="mod-reveal" id="modReveal"></div>
     </div>`;
 }
+// Round types without a wheel open with a card saying what's about to happen.
+function introHTML(s) {
+  const d = s.draw, [a, b] = s.artists || [];
+  const who = (p) => p ? `<b>${p.emoji} ${esc(p.name)}</b>` : "someone";
+  const info = {
+    draw: ["🎨", `${d ? `<b>${d.drawerEmoji} ${esc(d.drawerName)}</b>` : "Someone"} draws a secret word. Everyone else types guesses, fastest gets the most.`],
+    drawoff: ["🖌️", `${who(a)} vs ${who(b)}. Same word, two drawings, and the room picks the winner.`],
+    closest: ["📏", "A number question. Type your best guess, closest wins."],
+    hottake: ["🔥", "Agree or disagree? Then guess what % of the team agrees with you."],
+    write: ["✍️", "Everyone writes an answer. Then you guess who wrote what."],
+  }[s.kind] || ["🎲", ""];
+  return `<div class="intro">
+    <div class="intro-emoji pop">${info[0]}</div>
+    <h1 class="display pop">${esc(kindName(s.kind))}</h1>
+    <p class="pop">${info[1]}</p>
+    ${s.mod.id !== "vanilla" ? `<div class="pop">${modBadge(s.mod)}</div>` : ""}
+  </div>`;
+}
 function spinWheel(s) {
   const seg = 360 / s.wheel.length;
   const target = 360 * 6 + (360 - (s.modIndex + 0.5) * seg) + (Math.random() - 0.5) * seg * 0.6;
@@ -795,7 +835,7 @@ const tileStyle = (i) => `background:${COLORS[i % COLORS.length]}`;
 const colorVar = (i) => `--c:${COLORS[i % COLORS.length]}`;
 const shapeChip = (i) => `<span class="shape-chip">${SHAPES[i % SHAPES.length]}</span>`;
 // Rounds that skip the wheel show their round type instead of a modifier.
-const modBadge = (m) => ["who", "dvote", "write"].includes(state?.q?.kind) ? `<span class="muted">${KIND_LABEL[state.q.kind]}</span>` : `<span class="modbadge" style="--c:${m.color}">${m.emoji} <b>${esc(m.label)}</b> <span>· ${esc(m.desc)}</span></span>`;
+const modBadge = (m) => ["who", "dvote", "write"].includes(state?.q?.kind) ? `<span class="muted kindtag">${KIND_LABEL[state.q.kind]}</span>` : `<span class="modbadge" style="--c:${m.color}">${m.emoji} <b>${esc(m.label)}</b> <span>· ${esc(m.desc)}</span></span>`;
 const PRANK_INFO = {
   ice: ["🧊", "Ice the leader", "freeze them 5s"],
   banana: ["🍌", "Banana", "shuffle someone's buttons"],
@@ -868,6 +908,7 @@ const feedHTML = (feed) => feed.map((g) => g.text
 // The two draw-off canvases, side by side with the artists' names.
 const duoHTML = (s, cls = "") => `<div class="duo ${cls}">${s.artists.map((a, i) => `<div class="side"><div class="inkwrap"><canvas class="ink" data-a="${i}"></canvas></div><span>${a.emoji} ${esc(a.name)}</span></div>`).join("")}</div>`;
 const KIND_LABEL = { quiz: "🧠 Quiz", vote: "🗳️ Team vote", draw: "🎨 Draw round", drawoff: "🖌️ Draw-off", dvote: "🖌️ Draw-off vote", closest: "📏 Closest wins", hottake: "🔥 Hot take", write: "✍️ Who wrote it", who: "✍️ Who wrote it" };
+const kindName = (k) => KIND_LABEL[k].replace(/^\S+\s+/, ""); // label without its emoji
 const INPUT_KINDS = ["closest", "hottake", "write"];
 const fmtNum = (n) => Number(n).toLocaleString("en-US", { maximumFractionDigits: 3 });
 const sendGuess = (input, send) => {
@@ -1008,9 +1049,9 @@ function renderHost(fresh) {
     app.innerHTML = `
       <div class="host">
         <div class="topbar">${qcount(s)}<span class="muted">${KIND_LABEL[s.q.kind] || "🧠 Quiz"}</span></div>
-        ${wheelHTML(s)}
+        ${["quiz", "vote"].includes(s.kind) ? wheelHTML(s) : introHTML(s)}
       </div>`;
-    spinWheel(s);
+    if (["quiz", "vote"].includes(s.kind)) spinWheel(s); else sfx.mod();
     return;
   }
 
@@ -1375,7 +1416,7 @@ function renderPlayer(fresh) {
       <p class="muted">Eyes on the shared screen. ${s.playerCount} player${s.playerCount > 1 ? "s" : ""} so far.</p>
       ${s.powerups ? `<p class="muted">🎲 <b>All-in</b> once per game, plus a prank card: ${PRANK_INFO[me.prank]?.[0] ?? "🃏"} <b>${esc(PRANK_INFO[me.prank]?.[1] ?? "a prank")}</b>. Used cards get refilled every few questions.</p>` : ""}</div>`;
   } else if (s.phase === "spin") {
-    body = `<div class="phone-wheel">${wheelHTML(s)}</div>`;
+    body = ["quiz", "vote"].includes(s.kind) ? `<div class="phone-wheel">${wheelHTML(s)}</div>` : introHTML(s);
   } else if (s.phase === "question" && s.q) {
     const answered = me.answer !== null;
     const pickedText = answered ? s.q.options.find((o) => o.i === me.answer)?.text : "";
@@ -1426,7 +1467,7 @@ function renderPlayer(fresh) {
   bindReacts();
   bindPowers();
   if ($(".frozen")) navigator.vibrate?.([80, 40, 80]);
-  if (s.phase === "spin") spinWheel(s);
+  if (s.phase === "spin" && ["quiz", "vote"].includes(s.kind)) spinWheel(s);
   if (s.phase === "reveal" && fresh) navigator.vibrate?.(s.result?.delta > 0 ? 60 : [40, 60, 40]);
 }
 
@@ -1805,7 +1846,7 @@ function renderPanel() {
   if (!ps.contains(document.activeElement)) ps.innerHTML = settingsHTML(s.settings, s.allMods);
   $("#pqn").textContent = s.queue.length;
   $("#pqueue").innerHTML = s.queue.length
-    ? s.queue.map((q) => `<div class="qrow"><div>${(KIND_LABEL[q.kind] || "🧠").split(" ")[0]} ${q.kind === "draw" || q.kind === "drawoff" ? `${KIND_LABEL[q.kind].slice(3)}${q.text ? `: ${esc(q.text)}` : " (random word)"}` : q.kind === "closest" ? `${esc(q.text)} <small>= ${fmtNum(q.num)}</small>` : esc(q.text)}${q.kind === "quiz" ? `<br><small>✔ ${esc(q.options[q.correct])}</small>` : ""}</div><button class="ghost" data-rm="${q.i}">✕</button></div>`).join("")
+    ? s.queue.map((q) => `<div class="qrow"><div>${(KIND_LABEL[q.kind] || "🧠").split(" ")[0]} ${q.kind === "draw" || q.kind === "drawoff" ? `${kindName(q.kind)}${q.text ? `: ${esc(q.text)}` : " (random word)"}` : q.kind === "closest" ? `${esc(q.text)} <small>= ${fmtNum(q.num)}</small>` : esc(q.text)}${q.kind === "quiz" ? `<br><small>✔ ${esc(q.options[q.correct])}</small>` : ""}</div><button class="ghost" data-rm="${q.i}">✕</button></div>`).join("")
     : `<p class="muted">${s.phase === "lobby" ? "Questions are set in the lobby on the main screen." : "Nothing queued. Add some below, or the game ends after this one."}</p>`;
   $("#pqueue").querySelectorAll("[data-rm]").forEach((b) => (b.onclick = () => sendMsg({ t: "queueRemove", i: +b.dataset.rm })));
   $("#paddbtn").disabled = s.phase === "lobby" || s.phase === "end";

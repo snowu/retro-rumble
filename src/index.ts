@@ -153,7 +153,8 @@ function lev(a: string, b: string): number {
 const PRANKS: PrankId[] = ["ice", "banana", "fog", "swap"];
 const CLOSEST_MODS: ModId[] = ["vanilla", "double", "speed"];
 const PLAIN_MODS: ModId[] = ["vanilla", "double"];
-const NO_SPIN: Kind[] = ["write", "who", "dvote"]; // follow-ups and writing rounds go straight in
+const NO_SPIN: Kind[] = ["who", "dvote"]; // follow-ups go straight in
+const WHEEL_KINDS: Kind[] = ["quiz", "vote"]; // the rest get an intro card: their few modifiers would make a coin-flip wheel
 const DURATION: Partial<Record<Kind, number>> = { draw: 60000, drawoff: 60000, write: 45000, who: 20000, dvote: 20000 };
 
 // Closest wins: only fixed, well-documented facts, nothing that drifts (populations, prices, records).
@@ -218,6 +219,7 @@ function cleanSettings(raw: unknown, prev: Settings): Settings {
 }
 
 const SPIN_MS = 6500;
+const INTRO_MS = 5000;
 const FREEZE_MS = 5000;
 const AVATARS = ["🦊", "🐸", "🐙", "🦄", "🐼", "🦖", "🐝", "🦉", "🐧", "🦀", "🐯", "🐨", "🦦", "🐳", "🦩", "🐲", "🦔", "🐌", "👾", "🤖"];
 const REACTIONS = ["🔥", "😂", "👏", "😱", "💀", "🎉", "🤡", "🧠"];
@@ -342,26 +344,27 @@ function dedupe(add: Question[], existing: string[]): Question[] {
   });
 }
 
-// Play along: ten quiz questions (fresh trivia plus a few built-in trick ones),
-// each followed by one of the other round types.
-function playSet(builtin: Question[], trivia: Question[], asked: Set<string>): Question[] {
+// Play along alternates strictly: a trivia question, then a silly round, and so on.
+// Closest wins counts as trivia. Leftover trivia is kept as spares to keep "who wrote it" rounds alternating too.
+function playSet(builtin: Question[], trivia: Question[], asked: Set<string>): { list: Question[]; spares: Question[] } {
   const fresh = <T>(xs: T[], text: (x: T) => string, n: number) => {
     const unseen = xs.filter((x) => !asked.has(text(x)));
     return shuffle(unseen.length >= n ? unseen : xs).slice(0, n);
   };
-  const classics = fresh(builtin.filter((q) => q.kind === "quiz"), (q) => q.text, 10);
-  const extra = dedupe(trivia, [...asked, ...classics.map((q) => q.text)]).slice(0, 7);
-  const quiz = extra.length >= 5 ? shuffle([...extra, ...classics.slice(0, 10 - extra.length)]) : classics;
+  const classics = fresh(builtin.filter((q) => q.kind === "quiz"), (q) => q.text, 14);
+  const extra = dedupe(trivia, [...asked, ...classics.map((q) => q.text)]);
+  const pool = extra.length >= 5 ? [...shuffle(extra), ...classics] : classics;
   const blank = (kind: Kind, text = ""): Question => ({ kind, text, options: [], correct: -1 });
-  const specials = shuffle([
+  const closest = fresh(CLOSEST, ([t]) => t, 2).map(([text, num]) => ({ ...blank("closest", text), num }));
+  const triviaLane = shuffle([...pool.slice(0, 6), ...closest]);
+  const sillyLane = shuffle([
     ...fresh(builtin.filter((q) => q.kind === "vote"), (q) => q.text, 3),
-    ...fresh(CLOSEST, ([t]) => t, 2).map(([text, num]) => ({ ...blank("closest", text), num })),
     ...fresh(HOT_TAKES, (t) => t, 2).map((t) => blank("hottake", t)),
     blank("write", fresh(WRITE_PROMPTS, (t) => t, 1)[0]),
     blank("draw"),
     blank("drawoff"),
   ]);
-  return quiz.flatMap((q, i) => (specials[i] ? [q, specials[i]] : [q]));
+  return { list: triviaLane.flatMap((q, i) => (sillyLane[i] ? [q, sillyLane[i]] : [q])), spares: pool.slice(6, 9) };
 }
 
 // "Who is most likely to push to main?" becomes "most likely to push to main".
@@ -422,6 +425,7 @@ export class Room extends DurableObject<Env> {
   voteIds: string[] = []; // player ids behind the current vote's options
   drawerId = "";
   artists: string[] = []; // the two players in a draw-off
+  spares: Question[] = []; // play along: trivia kept back to slot between "who wrote it" rounds
   strokes: Stroke[] = [];
   inkSize = 0;
   feed: Guess[] = [];
@@ -550,9 +554,10 @@ export class Room extends DurableObject<Env> {
         this.starting = false;
         if (!this.created || this.phase !== "lobby") return; // closed while we waited
         if (trivia.length < 8) this.toHosts({ t: "event", text: "Open Trivia DB didn't answer, using the built-in questions" });
-        this.questions = playSet(qs, trivia, this.asked);
+        ({ list: this.questions, spares: this.spares } = playSet(qs, trivia, this.asked));
       } else {
         this.questions = qs;
+        this.spares = [];
       }
       this.qi = -1;
       this.robinUsed = false;
@@ -790,6 +795,7 @@ export class Room extends DurableObject<Env> {
     const pool = (pools[q.kind] ?? ["vanilla"]).filter((m) => this.settings.mods.includes(m) && (m !== "robin" || robinOk));
     this.modPool = pool.length ? pool : ["vanilla"];
     this.modIndex = Math.floor(Math.random() * this.modPool.length);
+    if (!WHEEL_KINDS.includes(q.kind) && Math.random() < 0.6) this.modIndex = Math.max(0, this.modPool.indexOf("vanilla")); // mostly plain
     this.mod = this.modPool[this.modIndex];
     if (this.mod === "robin") this.robinUsed = true;
     const refill = this.qi > 0 && this.qi % 5 === 0;
@@ -807,7 +813,7 @@ export class Room extends DurableObject<Env> {
     }
     this.phase = "spin";
     this.broadcast();
-    this.timer = setTimeout(() => this.startQuestion(), SPIN_MS);
+    this.timer = setTimeout(() => this.startQuestion(), WHEEL_KINDS.includes(q.kind) ? SPIN_MS : INTRO_MS);
   }
 
   private startQuestion() {
@@ -1053,7 +1059,9 @@ export class Room extends DurableObject<Env> {
       return this.nextQuestion();
     }
     const rounds = entries.slice(0, 3).map((p): Question => ({ kind: "who", text: p.text, prompt: q.text, authorId: p.id, options: [], correct: -1 }));
-    this.questions.splice(this.qi + 1, 0, ...rounds);
+    // In play along a spare trivia question goes before each one, so trivia and silly rounds keep taking turns.
+    const seq = rounds.flatMap((r) => { const spare = this.spares.shift(); return spare ? [spare, r] : [r]; });
+    this.questions.splice(this.qi + 1, 0, ...seq);
     this.event(`✍️ ${entries.length} answers are in. Who wrote what?`);
     this.nextQuestion();
   }
@@ -1257,6 +1265,7 @@ export class Room extends DurableObject<Env> {
       mod: this.modInfo(this.mod),
       deadline: this.qStart + this.qDuration,
       duration: this.qDuration,
+      kind: this.cur?.kind ?? null,
       wheel: this.modPool.map((id) => this.modInfo(id)),
       modIndex: this.modIndex,
       now: Date.now(),
