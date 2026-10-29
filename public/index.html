@@ -179,6 +179,7 @@ input:focus, textarea:focus { outline: none; border-color: var(--cyan); }
 @keyframes floatup { to { transform: translateY(-85vh) rotate(var(--r)); opacity: 0; } }
 #toasts { position: fixed; bottom: 84px; left: 50%; transform: translateX(-50%); display: grid; gap: 8px; z-index: 20; width: min(92vw, 520px); }
 .toast { background: #120a26ee; border: 2px solid var(--cyan); border-radius: 14px; padding: 12px 16px; font-weight: 800; text-align: center; animation: pop .35s cubic-bezier(.2, 1.6, .4, 1) both; box-shadow: 0 0 24px #2de2e655; }
+#stale { position: fixed; top: 0; left: 0; right: 0; z-index: 40; display: none; background: var(--yellow); color: #120a26; font-weight: 800; text-align: center; padding: 8px 16px; }
 #conn { position: fixed; bottom: 12px; left: 50%; transform: translateX(-50%); background: var(--red); color: #fff; padding: 6px 14px; border-radius: 999px; font-weight: 800; z-index: 30; display: none; }
 
 /* player */
@@ -404,6 +405,7 @@ textarea.win { min-height: 110px; font-size: 1.1rem; }
 <div id="app"></div>
 <div id="toasts"></div>
 <div id="conn">reconnecting…</div>
+<div id="stale">🔄 This page is out of date. Hard-refresh to update (Ctrl+Shift+R, or pull down on phones)</div>
 <div id="mybar"></div>
 <div id="hosttools">
   <button id="mutebtn" title="Sound on/off"></button>
@@ -562,6 +564,8 @@ const params = new URLSearchParams(location.search);
 // GitHub Pages only serves the page; rooms live on the Cloudflare Worker.
 const API = location.hostname.endsWith("github.io") ? "https://retro-rumble.zancato-t.workers.dev" : location.origin;
 
+// Must match VERSION in src/index.ts. GitHub Pages caches the page for ~10 minutes, so an old tab can outlive a deploy.
+const BUILD = "2026-10-30.1";
 let endTimer = 0;
 let ws = null, role = null, room = null, state = null, offset = 0, lastKey = "", seenPlayers = new Set();
 let mine = null, mineState = null, mineFrozen = false; // the host's own player seat in Play-along mode
@@ -703,6 +707,7 @@ function connect() {
     if (msg.t === "state") {
       offset = msg.now - Date.now();
       if (msg.qi !== ink.qi) ink = { qi: msg.qi, strokes: [] };
+      $("#stale").style.display = msg.ver && msg.ver !== BUILD ? "block" : "none";
       state = msg;
       render();
     }
@@ -823,6 +828,8 @@ function introHTML(s) {
     closest: ["📏", "A number question. Type your best guess, closest wins."],
     hottake: ["🔥", "Agree or disagree? Then guess what % of the team agrees with you."],
     write: ["✍️", "Everyone writes an answer. Then you guess who wrote what."],
+    quiz: ["🧠", "Trivia time. Fastest right answer scores the most."],
+    vote: ["🗳️", "Vote for a teammate. You score if you pick who the room picks."],
   }[s.kind] || ["🎲", ""];
   return `<div class="intro">
     <div class="intro-emoji pop">${info[0]}</div>
@@ -1064,9 +1071,9 @@ function renderHost(fresh) {
     app.innerHTML = `
       <div class="host">
         <div class="topbar">${qcount(s)}<span class="muted">${KIND_LABEL[s.q.kind] || "🧠 Quiz"}</span></div>
-        ${["quiz", "vote"].includes(s.kind) ? wheelHTML(s) : introHTML(s)}
+        ${s.wheelOn ? wheelHTML(s) : introHTML(s)}
       </div>`;
-    if (["quiz", "vote"].includes(s.kind)) spinWheel(s); else sfx.mod();
+    if (s.wheelOn) spinWheel(s); else sfx.mod();
     return;
   }
 
@@ -1535,7 +1542,7 @@ function renderPlayer(fresh) {
       ${s.powerups ? `<p class="muted">🎲 <b>All-in</b> once per game, plus a prank card: ${PRANK_INFO[me.prank]?.[0] ?? "🃏"} <b>${esc(PRANK_INFO[me.prank]?.[1] ?? "a prank")}</b>. Used cards get refilled every few questions.</p>` : ""}
       <button class="perfbtn ${me.performer ? "on" : ""}" id="perfbtn">${me.performer ? "🎤 You're on the performer list. Tap to opt out" : "🎤 Happy to hum &amp; mime a song or movie on the call? Tap to opt in"}</button></div>`;
   } else if (s.phase === "spin") {
-    body = ["quiz", "vote"].includes(s.kind) ? `<div class="phone-wheel">${wheelHTML(s)}</div>` : introHTML(s);
+    body = s.wheelOn ? `<div class="phone-wheel">${wheelHTML(s)}</div>` : introHTML(s);
   } else if (s.phase === "question" && s.q) {
     const answered = me.answer !== null;
     const pickedText = answered ? s.q.options.find((o) => o.i === me.answer)?.text : "";
@@ -1587,7 +1594,7 @@ function renderPlayer(fresh) {
   bindPowers();
   $("#perfbtn") && ($("#perfbtn").onclick = () => sendMsg({ t: "performer", on: !me.performer }));
   if ($(".frozen")) navigator.vibrate?.([80, 40, 80]);
-  if (s.phase === "spin" && ["quiz", "vote"].includes(s.kind)) spinWheel(s);
+  if (s.phase === "spin" && s.wheelOn) spinWheel(s);
   if (s.phase === "reveal" && fresh) navigator.vibrate?.(s.result?.delta > 0 ? 60 : [40, 60, 40]);
 }
 

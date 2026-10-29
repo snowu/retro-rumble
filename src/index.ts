@@ -260,6 +260,8 @@ function cleanSettings(raw: unknown, prev: Settings): Settings {
   };
 }
 
+// Bump together with BUILD in public/index.html: pages with an older BUILD ask to be refreshed.
+const VERSION = "2026-10-30.1";
 const SPIN_MS = 6500;
 const INTRO_MS = 5000;
 const FREEZE_MS = 5000;
@@ -883,7 +885,7 @@ export class Room extends DurableObject<Env> {
     }
     this.phase = "spin";
     this.broadcast();
-    this.timer = setTimeout(() => this.startQuestion(), WHEEL_KINDS.includes(q.kind) ? SPIN_MS : INTRO_MS);
+    this.timer = setTimeout(() => this.startQuestion(), this.wheelOn() ? SPIN_MS : INTRO_MS);
   }
 
   private startQuestion() {
@@ -915,6 +917,11 @@ export class Room extends DurableObject<Env> {
     this.cur = { ...q, text: title };
     this.hintLevel = 0;
     this.hintOrder = shuffle([...title].map((ch, i) => (/[a-z0-9]/i.test(ch) ? i : -1)).filter((i) => i >= 0));
+  }
+
+  // A wheel needs a few real choices; with fewer it's an intro card instead.
+  private wheelOn(): boolean {
+    return !!this.cur && WHEEL_KINDS.includes(this.cur.kind) && this.modPool.length >= 4;
   }
 
   private hint(): string {
@@ -1363,6 +1370,8 @@ export class Room extends DurableObject<Env> {
       wheel: this.modPool.map((id) => this.modInfo(id)),
       modIndex: this.modIndex,
       now: Date.now(),
+      wheelOn: this.wheelOn(),
+      ver: VERSION,
     };
   }
 
