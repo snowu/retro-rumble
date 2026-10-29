@@ -171,6 +171,11 @@ input:focus, textarea:focus { outline: none; border-color: var(--cyan); }
 .frozen .huge { animation: pulse .5s infinite; }
 .frozen .secs { font-family: Bungee, sans-serif; font-size: 3rem; }
 .result-delta { font-family: Bungee, sans-serif; font-size: 3rem; }
+.phone-wheel .wheel-wrap { width: min(78vw, 46vh); }
+.phone-wheel .wheel .seg span { font-size: .62rem; }
+.phone-wheel .mod-reveal .m-label { font-size: 1.8rem; }
+.phone-wheel .mod-reveal .m-desc { font-size: 1rem; }
+.correct-card { width: 100%; justify-content: center; font-size: 1.3rem; box-shadow: 0 0 0 3px #fff, 0 0 30px #3ef08a88; }
 .reacts { position: fixed; bottom: 0; left: 0; right: 0; display: flex; justify-content: center; gap: 4px; padding: 10px 10px calc(10px + env(safe-area-inset-bottom)); background: #0d0820ee; border-top: 2px solid var(--line); z-index: 12; }
 .reacts button { font-size: 1.7rem; background: none; padding: 4px 6px; border-radius: 10px; }
 .reacts button:active { transform: scale(1.4); }
@@ -184,37 +189,77 @@ input:focus, textarea:focus { outline: none; border-color: var(--cyan); }
 const DEFAULT_QUESTIONS = `# "? question" then options, * marks the right one (2-4 options)
 # "vote: prompt" = everyone votes for a teammate. Majority wins points.
 
-? In what year was Git first released?
-2003
-*2005
-2008
+? How many hearts does an octopus have?
+1
+2
+*3
+8
+
+? Bananas are technically a…
+*Berry
+Nut
+Legume
+Herb
+
+? What colour is a polar bear's skin?
+White
+Pink
+*Black
+Grey
+
+vote: Who would survive the longest in a zombie apocalypse?
+
+? Which country has the most time zones (counting its territories)?
+Russia
+USA
+*France
+UK
+
+? What is the national animal of Scotland?
+Lion
+Red deer
+*Unicorn
+Golden eagle
+
+? In what year was the first iPhone released?
+2005
+*2007
+2009
 2010
-
-? The Agile Manifesto was written at a ski resort in which US state?
-Colorado
-*Utah
-Vermont
-Montana
-
-? What does HTTP status 418 mean?
-Payload Too Large
-*I'm a teapot
-Too Early
-Unavailable For Legal Reasons
 
 vote: Who is most likely to push straight to main on a Friday?
 
-? Roughly how long did it take to create the first version of JavaScript?
-*10 days
-3 months
-1 year
-A long weekend
+? A group of flamingos is called a…
+*Flamboyance
+Parade
+Blush
+Pinkery
 
-? The first literal computer "bug" found in 1947 was a…
-*Moth
-Cockroach
-Spider
-Fly
+? How long did the shortest war in history last?
+*About 38 minutes
+6 hours
+3 days
+2 weeks
+
+? How many bones are in the adult human body?
+186
+*206
+226
+250
+
+vote: Who has the most browser tabs open right now?
+
+? Which planet has the most known moons?
+Jupiter
+*Saturn
+Uranus
+Neptune
+
+? Which of these was invented first?
+*Fax machine
+Telephone
+Light bulb
+Radio
 
 ? What is 0.1 + 0.2 in JavaScript?
 0.3
@@ -222,39 +267,19 @@ Fly
 0.30000000000000001
 NaN
 
-vote: Who has the most browser tabs open right now?
+vote: Who is most likely to become famous one day?
 
-? Rubber duck debugging was popularised by which book?
-*The Pragmatic Programmer
-Clean Code
-Code Complete
-Refactoring
+? The first literal computer "bug", found in 1947, was a…
+*Moth
+Cockroach
+Spider
+Fly
 
-? Which company originally created Kubernetes?
-Docker
-*Google
-Red Hat
-Microsoft
-
-? Story points usually follow which number sequence?
-Prime numbers
-Powers of two
-*Fibonacci
-Whatever the PO says
-
-vote: Who would survive the longest in a zombie apocalypse?
-
-? What does the "S" in SOLID stand for?
-*Single responsibility
-Separation of concerns
-Stateless design
-Simple interfaces
-
-? How many bytes are in a kibibyte?
-1000
-*1024
-1048
-512
+? What is the most spoken native language in the world?
+English
+Spanish
+Hindi
+*Mandarin Chinese
 
 vote: Who is the MVP of this sprint?
 `;
@@ -428,6 +453,36 @@ function render() {
   if (fresh) setTimeout(() => app.classList.remove("fresh"), 1200);
 }
 
+function wheelHTML(s) {
+  const seg = 360 / s.wheel.length;
+  const grad = s.wheel.map((m, i) => `${m.color} ${i * seg}deg ${(i + 1) * seg}deg`).join(",");
+  return `
+    <div class="wheel-stage">
+      <div class="wheel-wrap">
+        <div class="pointer">▼</div>
+        <div class="wheel" id="wheel" style="background:conic-gradient(${grad})">
+          ${s.wheel.map((m, i) => `<div class="seg" style="transform:rotate(${(i + 0.5) * seg}deg)"><span><b>${m.emoji}</b>${esc(m.label)}</span></div>`).join("")}
+        </div>
+        <div class="hub">🎡</div>
+      </div>
+      <div class="mod-reveal" id="modReveal"></div>
+    </div>`;
+}
+function spinWheel(s) {
+  const seg = 360 / s.wheel.length;
+  const target = 360 * 6 + (360 - (s.modIndex + 0.5) * seg) + (Math.random() - 0.5) * seg * 0.6;
+  requestAnimationFrame(() => requestAnimationFrame(() => { const w = $("#wheel"); if (w) w.style.transform = `rotate(${target}deg)`; }));
+  const N = 34;
+  for (let k = 0; k < N; k++) setTimeout(sfx.click, 4200 * (1 - Math.cbrt(1 - k / N)));
+  setTimeout(() => {
+    const el = $("#modReveal");
+    if (!el) return;
+    el.innerHTML = `<span class="m-emoji">${s.mod.emoji}</span><div class="m-label" style="color:${s.mod.color}">${esc(s.mod.label)}</div><div class="m-desc">${esc(s.mod.desc)}</div>`;
+    sfx.mod();
+    navigator.vibrate?.(50);
+  }, 4300);
+}
+
 const tileStyle = (i) => `background:${COLORS[i % COLORS.length]}`;
 const modBadge = (m) => `<span class="modbadge" style="background:${m.color}">${m.emoji} ${esc(m.label)} — ${esc(m.desc)}</span>`;
 const qcount = (s) => `<span class="qcount">Q ${s.qi + 1} / ${s.total}</span>`;
@@ -452,7 +507,7 @@ function renderHost(fresh) {
           <details class="qedit">
             <summary>✏️ Edit questions (<span id="qn"></span>)</summary>
             <textarea id="qtext" spellcheck="false"></textarea>
-            <div class="help muted">"? question" then 2–4 options with * on the right one · "vote: who is most likely to…" pits teammates against each other · edits are remembered on this browser</div>
+            <div class="help muted">"? question" then 2–4 options with * on the right one · "vote: who is most likely to…" pits teammates against each other · edits are remembered on this browser · <a href="#" id="qreset" style="color:var(--cyan)">reset to defaults</a></div>
           </details>
           <div class="lobby-actions"><button class="big" id="start">Let's rumble ▶</button></div>
         </div>`;
@@ -462,6 +517,7 @@ function renderHost(fresh) {
       const countQs = () => { $("#qn").textContent = ta.value.split("\n").filter((l) => /^\s*(\?|vote:)/i.test(l)).length; };
       ta.oninput = () => { store.set("rr-questions", ta.value); countQs(); };
       countQs();
+      $("#qreset").onclick = (e) => { e.preventDefault(); ta.value = DEFAULT_QUESTIONS; ta.oninput(); };
       $("#start").onclick = () => { unlockAudio(); sendMsg({ t: "start", questions: ta.value }); };
       seenPlayers = new Set();
     }
@@ -476,32 +532,12 @@ function renderHost(fresh) {
 
   if (s.phase === "spin") {
     if (!fresh) return;
-    const n = s.wheel.length, seg = 360 / n;
-    const grad = s.wheel.map((m, i) => `${m.color} ${i * seg}deg ${(i + 1) * seg}deg`).join(",");
     app.innerHTML = `
       <div class="host">
         <div class="topbar">${qcount(s)}<span class="muted">${s.q.kind === "vote" ? "🗳️ Team vote" : "🧠 Quiz"}</span></div>
-        <div class="wheel-stage">
-          <div class="wheel-wrap">
-            <div class="pointer">▼</div>
-            <div class="wheel" id="wheel" style="background:conic-gradient(${grad})">
-              ${s.wheel.map((m, i) => `<div class="seg" style="transform:rotate(${(i + 0.5) * seg}deg)"><span><b>${m.emoji}</b>${esc(m.label)}</span></div>`).join("")}
-            </div>
-            <div class="hub">🎡</div>
-          </div>
-          <div class="mod-reveal" id="modReveal"></div>
-        </div>
+        ${wheelHTML(s)}
       </div>`;
-    const target = 360 * 6 + (360 - (s.modIndex + 0.5) * seg) + (Math.random() - 0.5) * seg * 0.6;
-    requestAnimationFrame(() => requestAnimationFrame(() => { $("#wheel").style.transform = `rotate(${target}deg)`; }));
-    const N = 34;
-    for (let k = 0; k < N; k++) setTimeout(sfx.click, 4200 * (1 - Math.cbrt(1 - k / N)));
-    setTimeout(() => {
-      const el = $("#modReveal");
-      if (!el) return;
-      el.innerHTML = `<span class="m-emoji">${s.mod.emoji}</span><div class="m-label" style="color:${s.mod.color}">${esc(s.mod.label)}</div><div class="m-desc">${esc(s.mod.desc)}</div>`;
-      sfx.mod();
-    }, 4300);
+    spinWheel(s);
     return;
   }
 
@@ -585,6 +621,7 @@ function renderHost(fresh) {
 
 function renderPlayer(fresh) {
   const s = state, me = s.me;
+  if (s.phase === "spin" && !fresh) return;
   const head = `<div class="me"><span class="av">${me.emoji}</span>${esc(me.name)}<span class="sc">${me.score}</span></div>`;
   const reacts = `<div class="reacts">${REACTIONS.map((e) => `<button data-e="${e}">${e}</button>`).join("")}</div>`;
   let body = "";
@@ -594,7 +631,7 @@ function renderPlayer(fresh) {
       <p class="muted">Eyes on the shared screen. ${s.playerCount} player${s.playerCount > 1 ? "s" : ""} so far.</p>
       <p class="muted">🎲 <b>All-in</b> and 🧊 <b>Ice the leader</b> can each be used once per game. Use them wisely. Or don't.</p></div>`;
   } else if (s.phase === "spin") {
-    body = `<div class="center"><div class="huge" style="animation:wobble .4s infinite">🎡</div><h2 class="display">Spinning…</h2><p class="muted" id="pmod"></p></div>`;
+    body = `<div class="phone-wheel">${wheelHTML(s)}</div>`;
   } else if (s.phase === "question" && s.q) {
     const answered = me.answer !== null;
     const pickedText = answered ? s.q.options.find((o) => o.i === me.answer)?.text : "";
@@ -619,7 +656,10 @@ function renderPlayer(fresh) {
       <div class="huge pop">${icon}</div>
       <div class="result-delta pop ${r.delta > 0 ? "up" : r.delta < 0 ? "down" : "muted"}">${r.delta > 0 ? "+" : ""}${r.delta}</div>
       ${r.note ? `<p><b>${esc(r.note)}</b></p>` : ""}
-      ${s.winners.length ? `<p class="muted">${s.q?.kind === "vote" ? "Winner" : "Answer"}: <b>${s.winners.map(esc).join(" & ")}</b></p>` : ""}
+      ${s.q && s.winners.length ? `
+        <div class="muted">${s.q.kind === "vote" ? "The team picked" : "Correct answer"}</div>
+        ${s.q.options.map((o, pos) => s.winners.includes(o.i) ? `<div class="answer correct-card pop" style="${tileStyle(s.mod.id === "scramble" ? pos : o.i)}"><span>${SHAPES[(s.mod.id === "scramble" ? pos : o.i) % SHAPES.length]}</span>${esc(o.text)}</div>` : "").join("")}
+        ${me.answer !== null && !s.winners.includes(me.answer) ? `<p class="muted">You picked: <b>${esc(s.q.options.find((o) => o.i === me.answer)?.text ?? "")}</b></p>` : ""}` : ""}
       <h2 class="display">#${me.rank} <span class="muted">of ${s.playerCount}</span></h2>
     </div>`;
   } else if (s.phase === "end") {
@@ -633,9 +673,7 @@ function renderPlayer(fresh) {
   $("#allin") && ($("#allin").onclick = () => sendMsg({ t: "allin" }));
   $("#ice") && ($("#ice").onclick = () => sendMsg({ t: "ice" }));
   if ($(".frozen")) navigator.vibrate?.([80, 40, 80]);
-  if (s.phase === "spin" && fresh) {
-    setTimeout(() => { const el = $("#pmod"); if (el) el.innerHTML = `${s.mod.emoji} <b>${esc(s.mod.label)}</b><br>${esc(s.mod.desc)}`; }, 4300);
-  }
+  if (s.phase === "spin") spinWheel(s);
   if (s.phase === "reveal" && fresh) navigator.vibrate?.(s.result?.delta > 0 ? 60 : [40, 60, 40]);
 }
 

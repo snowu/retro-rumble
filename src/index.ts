@@ -423,6 +423,8 @@ export class Room extends DurableObject<Env> {
       mod: { id: this.mod, ...m },
       deadline: this.qStart + this.qDuration,
       duration: this.qDuration,
+      wheel: this.modPool.map((id) => ({ id, ...MODS[id] })),
+      modIndex: this.modIndex,
       now: Date.now(),
     };
   }
@@ -437,8 +439,6 @@ export class Room extends DurableObject<Env> {
         connected: !!p.ws, answered: p.answer !== null, allIn: p.allInActive, rank: this.rankOf(p),
       })),
       q: q ? { kind: q.kind, text: q.text, options: q.options } : null,
-      wheel: this.modPool.map((id) => ({ id, ...MODS[id] })),
-      modIndex: this.modIndex,
       reveal: this.phase === "reveal" ? this.reveal : null,
     };
   }
@@ -462,7 +462,7 @@ export class Room extends DurableObject<Env> {
       playerCount: this.players.size,
       q: q && options.length ? { kind: q.kind, text: q.text, options } : null,
       result: this.phase === "reveal" && r ? r.results[p.id] ?? null : null,
-      winners: this.phase === "reveal" && r && q ? r.winners.map((i) => q.options[i]) : [],
+      winners: this.phase === "reveal" && r ? r.winners : [],
     };
   }
 
