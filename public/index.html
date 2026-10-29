@@ -725,20 +725,19 @@ function renderHost(fresh) {
         $("#qn").textContent = `${m.length - bad} ready${bad ? `, ${bad} unfinished` : ""}`;
       });
       $("#qappend").onclick = () => {
-        const add = parseQs($("#qtext").value);
-        if (!add.length) return toast("Couldn't read any questions from that text");
+        const parsed = parseQs($("#qtext").value);
+        if (!parsed.length) return toast("Couldn't read any questions from that text");
+        const add = dedupe(parsed, model.map((q) => q.text));
         editor.set([...model, ...add]);
         $("#qtext").value = "";
-        toast(`➕ ${add.length} question${add.length > 1 ? "s" : ""} added`);
+        toast(addedMsg(add.length, parsed.length - add.length));
       };
       $("#otdbAdd").onclick = async () => {
-        const btn = $("#otdbAdd");
-        btn.disabled = true; btn.textContent = "🌐 Fetching…";
-        const add = await fetchTrivia(10, $("#otdbCat").value, $("#otdbDiff").value);
-        btn.disabled = false; btn.textContent = "🌐 Add 10 from Open Trivia DB";
-        if (!add.length) return toast("Open Trivia DB didn't answer. Try again in a few seconds, or another category");
+        const fetched = await withCooldown($("#otdbAdd"), () => fetchTrivia(10, $("#otdbCat").value, $("#otdbDiff").value));
+        if (!fetched.length) return toast("Open Trivia DB didn't answer. Try again in a few seconds, or another category");
+        const add = dedupe(fetched, model.map((q) => q.text));
         editor.set([...model, ...add]);
-        toast(`🌐 ${add.length} questions added`);
+        toast(addedMsg(add.length, fetched.length - add.length));
       };
       $("#qreset").onclick = (e) => { e.preventDefault(); if (confirm("Replace your questions with the default set?")) editor.set(parseQs(DEFAULT_QUESTIONS)); };
       $("#lobbySettings").onchange = () => store.set("rr-settings", JSON.stringify(readSettings($("#lobbySettings"))));
@@ -939,6 +938,26 @@ function renderPlayer(fresh) {
 const OTDB_CATS = [["mix", "🎲 Friendly mix"], ["9", "General Knowledge"], ["17", "Science & Nature"], ["22", "Geography"], ["23", "History"], ["27", "Animals"],
   ["11", "Film"], ["12", "Music"], ["18", "Computers"], ["21", "Sports"], ["20", "Mythology"], ["10", "Books"], ["25", "Art"], ["28", "Vehicles"],
   ["14", "Television"], ["15", "Video Games"], ["31", "Anime & Manga"]];
+// Open Trivia DB allows about one request per 5s, so a trivia button rests 5s from the press
+// (longer if the fetch is still running) and shows the countdown.
+async function withCooldown(btn, fn) {
+  const label = btn.textContent, until = Date.now() + 5000;
+  let busy = true;
+  btn.disabled = true;
+  btn.dataset.cooling = "1";
+  (function tick() {
+    const left = Math.ceil((until - Date.now()) / 1000);
+    if (left <= 0 && !busy) {
+      delete btn.dataset.cooling;
+      btn.disabled = false;
+      btn.textContent = label;
+      return;
+    }
+    btn.textContent = left > 0 ? `${label} · ${left}s` : "🌐 Fetching…";
+    setTimeout(tick, 200);
+  })();
+  try { return await fn(); } finally { busy = false; }
+}
 async function fetchTrivia(amount, category, difficulty) {
   try {
     const res = await fetch(`${API}/api/trivia?amount=${amount}&category=${category}&difficulty=${difficulty}`);
@@ -948,6 +967,25 @@ async function fetchTrivia(amount, category, difficulty) {
 }
 
 /* ---------- question editor ---------- */
+// Same duplicate check as the server: most meaningful words in common.
+const STOPWORDS = new Set(["the", "and", "for", "are", "was", "were", "which", "what", "who", "this", "that", "with", "from", "these", "following", "has", "have", "does", "did", "how", "many", "much", "when", "where", "year", "name", "called"]);
+const qwords = (t) => new Set(t.toLowerCase().replace(/[^\p{L}\p{N}\s]/gu, " ").split(/\s+/).filter((w) => (w.length > 2 || /\d|^[ivx]+$/.test(w)) && !STOPWORDS.has(w)));
+function similar(a, b) {
+  const x = qwords(a), y = qwords(b);
+  if (!x.size || !y.size) return a.trim().toLowerCase() === b.trim().toLowerCase();
+  let shared = 0;
+  for (const w of x) if (y.has(w)) shared++;
+  return shared / (x.size + y.size - shared) >= 0.75;
+}
+function dedupe(add, existing) {
+  const seen = existing.filter((t) => t.trim());
+  return add.filter((q) => {
+    if (seen.some((t) => similar(t, q.text))) return false;
+    seen.push(q.text);
+    return true;
+  });
+}
+const addedMsg = (n, skipped) => `➕ ${n} question${n === 1 ? "" : "s"} added${skipped ? ` (${skipped} duplicate${skipped > 1 ? "s" : ""} skipped)` : ""}`;
 const blankQ = (kind = "quiz") => ({ kind, text: "", options: ["", "", "", ""], correct: 0 });
 const qValid = (q) => !!q.text.trim() && (q.kind === "vote" || (q.options.filter((o) => o.trim()).length >= 2 && !!q.options[q.correct]?.trim()));
 
@@ -1136,10 +1174,7 @@ function renderPanel() {
     const draft = [blankQ()];
     const addEditor = mountEditor($("#padd"), draft, () => {});
     $("#potdb").onclick = async () => {
-      const btn = $("#potdb");
-      btn.disabled = true;
-      const qs = await fetchTrivia(5, "mix", "any");
-      btn.disabled = false;
+      const qs = await withCooldown($("#potdb"), () => fetchTrivia(5, "mix", "any"));
       if (!qs.length) return toast("Open Trivia DB didn't answer. Try again in a few seconds");
       sendMsg({ t: "queueAdd", questions: serializeQs(qs) });
     };
@@ -1177,7 +1212,8 @@ function renderPanel() {
     ? s.queue.map((q) => `<div class="qrow"><div>${q.kind === "vote" ? "🗳️" : "🧠"} ${esc(q.text)}${q.kind === "quiz" ? `<br><small>✔ ${esc(q.options[q.correct])}</small>` : ""}</div><button class="ghost" data-rm="${q.i}">✕</button></div>`).join("")
     : `<p class="muted">${s.phase === "lobby" ? "Questions are set in the lobby on the main screen." : "Nothing queued. Add some below, or the game ends after this one."}</p>`;
   $("#pqueue").querySelectorAll("[data-rm]").forEach((b) => (b.onclick = () => sendMsg({ t: "queueRemove", i: +b.dataset.rm })));
-  $("#paddbtn").disabled = $("#potdb").disabled = s.phase === "lobby" || s.phase === "end";
+  $("#paddbtn").disabled = s.phase === "lobby" || s.phase === "end";
+  $("#potdb").disabled = $("#paddbtn").disabled || !!$("#potdb").dataset.cooling;
 }
 
 /* ---------- per-frame: timer bar, last-seconds ticks, unfreeze ---------- */

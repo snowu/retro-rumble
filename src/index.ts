@@ -169,12 +169,35 @@ async function fetchTrivia(amount: number, category = "mix", difficulty = "any")
   return [];
 }
 
+// Two questions are duplicates when most of their meaningful words match,
+// so "How many bones are in the adult human body?" catches "How many bones are in the human body?".
+const STOPWORDS = new Set(["the", "and", "for", "are", "was", "were", "which", "what", "who", "this", "that", "with", "from", "these", "following", "has", "have", "does", "did", "how", "many", "much", "when", "where", "year", "name", "called"]);
+const words = (t: string) => new Set(t.toLowerCase().replace(/[^\p{L}\p{N}\s]/gu, " ").split(/\s+/).filter((w) => (w.length > 2 || /\d|^[ivx]+$/.test(w)) && !STOPWORDS.has(w)));
+function similar(a: string, b: string): boolean {
+  const x = words(a), y = words(b);
+  if (!x.size || !y.size) return a.trim().toLowerCase() === b.trim().toLowerCase();
+  let shared = 0;
+  for (const w of x) if (y.has(w)) shared++;
+  return shared / (x.size + y.size - shared) >= 0.75;
+}
+// Keeps the questions in `add` that don't duplicate `existing` or each other.
+function dedupe(add: Question[], existing: string[]): Question[] {
+  const seen = [...existing];
+  return add.filter((q) => {
+    if (seen.some((t) => similar(t, q.text))) return false;
+    seen.push(q.text);
+    return true;
+  });
+}
+
 // Play along: fresh trivia plus a few built-in trick questions, a team vote every 4th round.
 function playSet(builtin: Question[], trivia: Question[], asked: Set<string>): Question[] {
   const fresh = (qs: Question[]) => (qs.filter((q) => !asked.has(q.text)).length >= 4 ? qs.filter((q) => !asked.has(q.text)) : qs);
   const votes = shuffle(builtin.filter((q) => q.kind === "vote")).slice(0, 4);
   const classics = shuffle(fresh(builtin.filter((q) => q.kind === "quiz")));
-  const quiz = trivia.length >= 8 ? shuffle([...trivia.slice(0, 12), ...classics.slice(0, 4)]) : classics;
+  const picked = classics.slice(0, 4);
+  const extra = dedupe(trivia, [...asked, ...picked.map((q) => q.text)]).slice(0, 12);
+  const quiz = extra.length >= 8 ? shuffle([...extra, ...picked]) : classics;
   const out: Question[] = [];
   quiz.forEach((q, i) => {
     out.push(q);
@@ -312,7 +335,7 @@ export class Room extends DurableObject<Env> {
       if (this.mode === "play") {
         this.starting = true;
         this.toHosts({ t: "event", text: "🌐 Fetching fresh trivia…" });
-        const trivia = (await fetchTrivia(16)).filter((q) => !this.asked.has(q.text));
+        const trivia = await fetchTrivia(20);
         this.starting = false;
         if (!this.created || this.phase !== "lobby") return; // closed while we waited
         if (trivia.length < 8) this.toHosts({ t: "event", text: "Open Trivia DB didn't answer, using the built-in questions" });
@@ -330,10 +353,12 @@ export class Room extends DurableObject<Env> {
       this.settings = cleanSettings(msg.settings, this.settings);
       this.broadcast();
     } else if (msg.t === "queueAdd" && this.mode === "gm" && this.phase !== "lobby") {
-      const qs = parseQuestions(String(msg.questions ?? ""));
-      if (!qs.length) return this.toHosts({ t: "event", text: "No valid questions found — check the format" });
+      const parsed = parseQuestions(String(msg.questions ?? ""));
+      if (!parsed.length) return this.toHosts({ t: "event", text: "No valid questions found — check the format" });
+      const qs = dedupe(parsed, [...this.asked, ...this.questions.map((q) => q.text)]);
+      const skipped = parsed.length - qs.length;
       this.questions.push(...qs);
-      this.toHosts({ t: "event", text: `➕ ${qs.length} question${qs.length > 1 ? "s" : ""} queued` });
+      this.toHosts({ t: "event", text: `➕ ${qs.length} question${qs.length === 1 ? "" : "s"} queued${skipped ? ` (${skipped} duplicate${skipped > 1 ? "s" : ""} skipped)` : ""}` });
       this.broadcast();
     } else if (msg.t === "queueRemove" && this.mode === "gm") {
       const i = Number(msg.i);
