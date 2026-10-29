@@ -269,6 +269,14 @@ export class Room extends DurableObject<Env> {
       this.phase = "end";
       this.cur = null;
       this.broadcast();
+    } else if (msg.t === "close") {
+      // Forget everything; the code can be handed out again once the object is idle.
+      this.clearTimer();
+      const sockets = [...this.hosts, ...[...this.players.values()].map((p) => p.ws)];
+      Object.assign(this, { created: false, phase: "lobby", questions: [], qi: -1, cur: null, reveal: null });
+      this.players.clear();
+      this.hosts.clear();
+      for (const ws of sockets) try { ws?.close(4005, "room closed"); } catch {}
     } else if (msg.t === "again" && this.phase === "end") {
       for (const p of this.players.values()) {
         Object.assign(p, { score: 0, streak: 0, answer: null, allInUsed: false, allInActive: false, iceUsed: false, frozenUntil: 0 });

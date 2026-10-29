@@ -85,7 +85,8 @@ input:focus, textarea:focus { outline: none; border-color: var(--cyan); }
 .qedit summary { cursor: pointer; color: var(--muted); }
 .qedit textarea { margin-top: 10px; min-height: 260px; font-family: ui-monospace, monospace; font-size: .9rem; }
 .qedit .help { font-size: .85rem; margin-top: 6px; }
-.lobby-actions { display: flex; justify-content: center; }
+.lobby-actions { display: flex; justify-content: center; align-items: center; gap: 14px; flex-wrap: wrap; }
+.host-foot { align-items: center; }
 
 .wheel-stage { flex: 1; display: grid; place-items: center; gap: 12px; padding-top: 16px; }
 .wheel-wrap { position: relative; width: min(56vh, 86vw); aspect-ratio: 1; }
@@ -470,8 +471,12 @@ function connect() {
     else if (msg.t === "react") floatReact(msg.e);
   };
   ws.onclose = (ev) => {
-    if (ev.code === 4004 || ev.code === 4003) {
-      toast(ev.code === 4004 ? "That room doesn't exist (anymore)" : "You're not the host of that room");
+    if (ev.code === 4004 || ev.code === 4003 || ev.code === 4005) {
+      toast({ 4004: "That room doesn't exist (anymore)", 4003: "You're not the host of that room", 4005: "The host closed the room" }[ev.code]);
+      if (role !== "player") { store.set("rr-host-" + room, ""); store.set("rr-hostplayer-" + room, ""); }
+      try { mine?.close(); } catch {}
+      mine = null; mineState = null;
+      document.body.classList.remove("playing", "gm-host", "locked");
       history.replaceState(null, "", location.pathname);
       role = null; state = null; lastKey = "";
       return landing();
@@ -625,7 +630,7 @@ function renderHost(fresh) {
               </div>
             </details>
           </div>
-          <div class="lobby-actions"><button class="big" id="start">Let's rumble ▶</button></div>
+          <div class="lobby-actions"><button class="ghost" data-close-room>✕ Close room</button><button class="big" id="start">Let's rumble ▶</button></div>
         </div>`;
       try { new QRCode($("#qr"), { text: joinUrl, width: 190, height: 190, colorDark: "#0d0820", colorLight: "#ffffff" }); } catch { $("#qr").remove(); }
       let model = null;
@@ -669,9 +674,10 @@ function renderHost(fresh) {
     if (s.players.some((p) => !seenPlayers.has(p.id))) sfx.join();
     seenPlayers = new Set(s.players.map((p) => p.id));
     const hostName = $("#hostname").value.trim();
-    const ready = mode === "play" ? !!hostName : n > 0;
+    // Someone else has to be here; the host's own seat in Play along joins at start.
+    const ready = n > 0 && (mode !== "play" || !!hostName);
     $("#start").disabled = !ready;
-    $("#start").textContent = ready ? "Let's rumble ▶" : mode === "play" ? "Enter your name to play" : "Waiting for a player to join…";
+    $("#start").textContent = ready ? "Let's rumble ▶" : n === 0 ? "Waiting for a player to join…" : "Enter your name to play";
     return;
   }
 
@@ -758,7 +764,7 @@ function renderHost(fresh) {
             }).join("")}
           </div>
         </div>
-        <div class="host-foot"><button class="big" id="next">${last ? "Final results 🏆" : "Next ▶"}</button></div>
+        <div class="host-foot"><button class="ghost" data-close-room>✕ Close room</button><button class="big" id="next">${last ? "Final results 🏆" : "Next ▶"}</button></div>
       </div>`;
     sfx.reveal();
     setTimeout(() => document.querySelectorAll(".sc").forEach((el) => countUp(el, +el.dataset.from, +el.dataset.to)), 700);
@@ -775,7 +781,7 @@ function renderHost(fresh) {
         <h1 class="brand">CHAMPIONS</h1>
         <div class="podium">${col(b, "p2", 2)}${col(a, "p1", 1)}${col(c, "p3", 3)}</div>
         <div class="rest">${s.players.slice(3).map((p) => `${p.rank}. ${p.emoji} ${esc(p.name)} · ${p.score}`).join(" &nbsp;·&nbsp; ")}</div>
-        <button class="big" id="again">Run it back 🔁</button>
+        <div class="lobby-actions"><button class="ghost" data-close-room>✕ Close room</button><button class="big" id="again">Run it back 🔁</button></div>
       </div>`;
     sfx.fanfare();
     setTimeout(confetti, 1300);
@@ -926,6 +932,11 @@ function mountEditor(root, model, onChange) {
   return { set(m) { model.splice(0, model.length, ...m); draw(); onChange(model); } };
 }
 
+document.addEventListener("click", (e) => {
+  if (!e.target.closest("[data-close-room]")) return;
+  if (confirm("Close the room? Everyone gets disconnected and the code stops working.")) sendMsg({ t: "close" });
+});
+
 /* ---------- host modes ---------- */
 const lobbyMode = () => (store.get("rr-mode") === "play" ? "play" : "gm");
 
@@ -1041,7 +1052,8 @@ function renderPanel() {
     (s.phase === "question" ? `<button class="big" data-a="skip">Reveal now ⏭</button>` : "") +
     (s.phase === "reveal" ? `<button class="big" data-a="next">${last ? "Final results 🏆" : "Next ▶"}</button>` : "") +
     (s.phase === "end" ? `<button class="big" data-a="again">Run it back 🔁</button>` : "") +
-    (["spin", "question", "reveal"].includes(s.phase) ? `<button class="ghost" data-a="end">End game now</button>` : "");
+    (["spin", "question", "reveal"].includes(s.phase) ? `<button class="ghost" data-a="end">End game now</button>` : "") +
+    `<button class="ghost" data-close-room>✕ Close room</button>`;
   $("#pactions").querySelectorAll("[data-a]").forEach((b) => (b.onclick = () => {
     if (b.dataset.a === "end" && !confirm("End the game and show the podium?")) return;
     sendMsg({ t: b.dataset.a });
