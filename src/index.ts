@@ -50,7 +50,7 @@ interface Reveal {
 const MODS: Record<ModId, { label: string; emoji: string; desc: string; color: string }> = {
   vanilla: { label: "Vanilla", emoji: "🍦", desc: "A perfectly normal question. Suspicious.", color: "#f5e6c8" },
   double: { label: "Double Trouble", emoji: "✌️", desc: "All points ×2", color: "#ff3d9a" },
-  speed: { label: "Speed Demon", emoji: "⚡", desc: "8 seconds. Go.", color: "#ffd23f" },
+  speed: { label: "Speed Demon", emoji: "⚡", desc: "12 seconds. Go.", color: "#ffd23f" },
   mines: { label: "Minefield", emoji: "💣", desc: "Wrong or no answer: −300", color: "#ff4d4d" },
   heist: { label: "Heist", emoji: "🦹", desc: "Fastest correct answer steals 20% from the leader", color: "#8b5cf6" },
   scramble: { label: "Scramble", emoji: "🌀", desc: "Every phone's buttons are shuffled. Read!", color: "#2de2e6" },
@@ -61,8 +61,8 @@ const QUIZ_MODS: ModId[] = ["vanilla", "double", "speed", "mines", "heist", "scr
 const VOTE_MODS: ModId[] = ["vanilla", "double", "speed", "contrarian"];
 
 const SPIN_MS = 6500;
-const QUESTION_MS = 20000;
-const SPEED_MS = 8000;
+const QUESTION_MS = 30000;
+const SPEED_MS = 12000;
 const FREEZE_MS = 5000;
 const AVATARS = ["🦊", "🐸", "🐙", "🦄", "🐼", "🦖", "🐝", "🦉", "🐧", "🦀", "🐯", "🐨", "🦦", "🐳", "🦩", "🐲", "🦔", "🐌", "👾", "🤖"];
 const REACTIONS = ["🔥", "😂", "👏", "😱", "💀", "🎉", "🤡", "🧠"];
