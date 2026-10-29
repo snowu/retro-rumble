@@ -238,6 +238,11 @@ body.playing #hosttools { bottom: 96px; }
 #hosttools button { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 8px 12px; font-size: .9rem; color: var(--muted); }
 #hosttools button:hover { color: var(--ink); background: var(--surface-2); }
 #hosttools .danger:hover { color: var(--red); }
+#hostreacts { display: none; gap: 2px; margin-left: 8px; }
+body.playing #hostreacts { display: flex; }
+#hostreacts button { font-size: 1.3rem; padding: 4px 6px; background: none; border: 0; }
+#hostreacts button:hover { background: var(--surface-2); }
+#hostreacts button:active { transform: scale(1.3); }
 #cpbtn { display: none; }
 body.gm-host #cpbtn { display: block; }
 .panel { max-width: 760px; margin: 0 auto; padding: 20px 16px 60px; display: grid; gap: 16px; }
@@ -372,6 +377,7 @@ textarea.win { min-height: 110px; font-size: 1.1rem; }
   <button data-invite title="Copy the join link">🔗 Invite</button>
   <button id="cpbtn">🎛️ Control panel</button>
   <button class="danger" data-close-room>✕ Close room</button>
+  <span id="hostreacts"></span>
 </div>
 <script>
 const DEFAULT_QUESTIONS = `# "? question" then options, * marks the right one (2-4 options)
@@ -1246,6 +1252,8 @@ function bindPowers() {
   if (a) a.onclick = () => sendMsg({ t: "allin" });
   if (pr) pr.onclick = () => sendMsg({ t: "prank" });
 }
+const reactsHTML = () => `<div class="reacts">${REACTIONS.map((e) => `<button data-e="${e}">${e}</button>`).join("")}</div>`;
+const bindReacts = () => document.querySelectorAll(".reacts button").forEach((b) => (b.onclick = () => sendMsg({ t: "react", e: b.dataset.e })));
 const meHead = (s) => `<div class="me"><span class="av">${s.me.emoji}</span>${esc(s.me.name)}${s.phase !== "lobby" ? `<span class="rank">#${s.me.rank} of ${s.playerCount}</span>` : ""}<span class="sc">${s.me.score}</span></div>`;
 
 // Built once per draw round and then patched, so the pad and the guess box survive every state update.
@@ -1270,7 +1278,8 @@ function renderDrawPlayer() {
         : off ? "" : `<div id="gbox"></div><div class="feed" id="dfeed"></div>`}
       <div id="dpowers"></div>
       <div id="doverlay"></div>
-    </div>`;
+    </div>${reactsHTML()}`;
+    bindReacts();
     if (artist) {
       mountPad($("#pad"), ai);
       const tools = () => document.querySelectorAll(".tools [data-c], .tools [data-w]").forEach((b) => b.classList.toggle("on", b.dataset.c === pad.c || +b.dataset.w === pad.w));
@@ -1322,7 +1331,8 @@ function renderInputPlayer() {
       ${done ? locked : form}
       <div id="ipowers"></div>
       <div id="ioverlay"></div>
-    </div>`;
+    </div>${reactsHTML()}`;
+    bindReacts();
     if (!done && k === "hottake") {
       let agree = null;
       const lock = $("#tlock");
@@ -1357,7 +1367,7 @@ function renderPlayer(fresh) {
   if (s.phase === "question" && (s.q?.kind === "draw" || s.q?.kind === "drawoff")) return renderDrawPlayer();
   if (s.phase === "question" && INPUT_KINDS.includes(s.q?.kind)) return renderInputPlayer();
   const head = `<div class="me"><span class="av">${me.emoji}</span>${esc(me.name)}${s.phase !== "lobby" ? `<span class="rank">#${me.rank} of ${s.playerCount}</span>` : ""}<span class="sc">${me.score}</span></div>`;
-  const reacts = `<div class="reacts">${REACTIONS.map((e) => `<button data-e="${e}">${e}</button>`).join("")}</div>`;
+  const reacts = reactsHTML();
   let body = "";
 
   if (s.phase === "lobby") {
@@ -1413,7 +1423,7 @@ function renderPlayer(fresh) {
   app.innerHTML = `<div class="phone">${head}${body}</div>${reacts}`;
   if (s.q?.kind === "dvote") paintSoon();
   document.querySelectorAll(".answer").forEach((b) => (b.onclick = () => { navigator.vibrate?.(30); sendMsg({ t: "answer", i: +b.dataset.i }); }));
-  document.querySelectorAll(".reacts button").forEach((b) => (b.onclick = () => sendMsg({ t: "react", e: b.dataset.e })));
+  bindReacts();
   bindPowers();
   if ($(".frozen")) navigator.vibrate?.([80, 40, 80]);
   if (s.phase === "spin") spinWheel(s);
@@ -1651,6 +1661,9 @@ function connectMine(onFirstState) {
   };
 }
 const sendMine = (m) => mine?.readyState === 1 && mine.send(JSON.stringify(m));
+// Playing along from the big screen: the host's own reactions go through their player seat.
+$("#hostreacts").innerHTML = REACTIONS.map((e) => `<button data-e="${e}" title="React">${e}</button>`).join("");
+$("#hostreacts").onclick = (e) => { const b = e.target.closest("button"); if (b) sendMine({ t: "react", e: b.dataset.e }); };
 
 function renderMine() {
   const bar = $("#mybar"), s = mineState;
