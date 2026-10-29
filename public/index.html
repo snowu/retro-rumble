@@ -362,6 +362,17 @@ body.drawing #toasts { top: 12px; bottom: auto; } /* keep toasts off the palette
 .phone .duo { gap: 8px; } .phone .duo .side { font-size: .9rem; }
 .host .duo.small { margin-top: 18px; } .host .duo.small .inkwrap { max-width: min(100%, 30vh); }
 .kindtag { text-align: center; }
+.stage { display: grid; gap: 18px; justify-items: center; text-align: center; align-content: center; }
+.stage .star { font-size: clamp(1.6rem, 3.4vw, 2.8rem); font-weight: 800; } .stage .star b { color: var(--yellow); }
+.stage .type { font-size: clamp(1.1rem, 2vw, 1.6rem); color: var(--cyan); font-weight: 700; }
+.stage .dhint { font-size: clamp(1.8rem, 4vw, 3.2rem); }
+.stage .feed { width: min(100%, 720px); min-height: 0; }
+.secret { background: var(--surface); border: 2px solid var(--yellow); border-radius: 20px; padding: 20px; text-align: center; display: grid; gap: 6px; }
+.secret b { font-family: Bungee, sans-serif; font-size: clamp(1.6rem, 7vw, 2.6rem); color: var(--yellow); line-height: 1.1; }
+.rules { display: grid; gap: 6px; text-align: center; color: var(--muted); font-weight: 600; }
+.perfbtn { border-radius: 14px; padding: 14px 18px; font-weight: 800; background: var(--surface); border: 2px dashed var(--line); color: var(--muted); }
+.perfbtn.on { border: 2px solid var(--yellow); color: var(--ink); background: #ffd23f1a; }
+.bubble .mic { font-size: 1rem; }
 .instr { text-align: center; color: var(--muted); font-size: clamp(1rem, 1.6vw, 1.3rem); margin: -6px 0 0; }
 .qprompt { text-align: center; color: var(--cyan); font-weight: 700; font-size: clamp(1rem, 1.8vw, 1.4rem); margin: 0; }
 .quote::before { content: "“"; } .quote::after { content: "”"; }
@@ -504,6 +515,9 @@ draw:
 
 # "drawoff:" = two players draw the same word, everyone votes for the best one.
 drawoff:
+
+# "perform:" = a volunteer hums and mimes a song or movie on the call. Leave empty for a random one.
+perform:
 
 # "closest: question = number" = closest guess wins. Stick to facts you've checked.
 closest: How many bones are in the adult human body? = 206
@@ -780,7 +794,7 @@ function render() {
     renderMine();
   }
   if (fresh) setTimeout(() => app.classList.remove("fresh"), 1200);
-  document.body.classList.toggle("drawing", state.phase === "question" && ["draw", "drawoff", ...INPUT_KINDS].includes(state.q?.kind));
+  document.body.classList.toggle("drawing", state.phase === "question" && ["draw", "drawoff", "perform", ...INPUT_KINDS].includes(state.q?.kind));
 }
 
 function wheelHTML(s) {
@@ -803,6 +817,7 @@ function introHTML(s) {
   const d = s.draw, [a, b] = s.artists || [];
   const who = (p) => p ? `<b>${p.emoji} ${esc(p.name)}</b>` : "someone";
   const info = {
+    perform: ["🎤", `${d ? `<b>${d.drawerEmoji} ${esc(d.drawerName)}</b>` : "A volunteer"} performs a ${d?.secretType || "song or movie"}: hum it, mime it, no words. Everyone else guesses, so watch the call!`],
     draw: ["🎨", `${d ? `<b>${d.drawerEmoji} ${esc(d.drawerName)}</b>` : "Someone"} draws a secret word. Everyone else types guesses, fastest gets the most.`],
     drawoff: ["🖌️", `${who(a)} vs ${who(b)}. Same word, two drawings, and the room picks the winner.`],
     closest: ["📏", "A number question. Type your best guess, closest wins."],
@@ -907,7 +922,7 @@ const feedHTML = (feed) => feed.map((g) => g.text
   : `<div class="ok">✅ ${g.emoji} ${esc(g.name)} got it!</div>`).join("");
 // The two draw-off canvases, side by side with the artists' names.
 const duoHTML = (s, cls = "") => `<div class="duo ${cls}">${s.artists.map((a, i) => `<div class="side"><div class="inkwrap"><canvas class="ink" data-a="${i}"></canvas></div><span>${a.emoji} ${esc(a.name)}</span></div>`).join("")}</div>`;
-const KIND_LABEL = { quiz: "🧠 Quiz", vote: "🗳️ Team vote", draw: "🎨 Draw round", drawoff: "🖌️ Draw-off", dvote: "🖌️ Draw-off vote", closest: "📏 Closest wins", hottake: "🔥 Hot take", write: "✍️ Who wrote it", who: "✍️ Who wrote it" };
+const KIND_LABEL = { quiz: "🧠 Quiz", vote: "🗳️ Team vote", draw: "🎨 Draw round", drawoff: "🖌️ Draw-off", dvote: "🖌️ Draw-off vote", closest: "📏 Closest wins", hottake: "🔥 Hot take", write: "✍️ Who wrote it", who: "✍️ Who wrote it", perform: "🎤 Perform it" };
 const kindName = (k) => KIND_LABEL[k].replace(/^\S+\s+/, ""); // label without its emoji
 const INPUT_KINDS = ["closest", "hottake", "write"];
 const fmtNum = (n) => Number(n).toLocaleString("en-US", { maximumFractionDigits: 3 });
@@ -1033,7 +1048,7 @@ function renderHost(fresh) {
     document.querySelectorAll(".modecard").forEach((b) => b.classList.toggle("on", b.dataset.mode === mode));
     document.querySelectorAll(".modeopts").forEach((el) => (el.style.display = el.dataset.for === mode ? "" : "none"));
     $("#pcount").textContent = n ? `${n} player${n > 1 ? "s" : ""} in` : "Waiting for players…";
-    $("#bubbles").innerHTML = s.players.map((p) => `<div class="bubble ${p.connected ? "" : "off"}"><span class="av" style="animation-delay:-${Math.random() * 2}s">${p.emoji}</span>${esc(p.name)}</div>`).join("");
+    $("#bubbles").innerHTML = s.players.map((p) => `<div class="bubble ${p.connected ? "" : "off"}"><span class="av" style="animation-delay:-${Math.random() * 2}s">${p.emoji}</span>${esc(p.name)}${p.performer ? `<span class="mic" title="Happy to perform">🎤</span>` : ""}</div>`).join("");
     if (s.players.some((p) => !seenPlayers.has(p.id))) sfx.join();
     seenPlayers = new Set(s.players.map((p) => p.id));
     const hostName = $("#hostname").value.trim();
@@ -1077,6 +1092,32 @@ function renderHost(fresh) {
       $("#live").innerHTML = `<span class="count">${done.length}/${live.length}</span><span class="muted">locked in</span>` +
         done.map((p) => `<span class="in ${p.allIn ? "allin" : ""}" title="${esc(p.name)}">${p.emoji}</span>`).join("");
     }
+    return;
+  }
+
+  if (s.phase === "question" && s.q.kind === "perform") {
+    const d = s.draw;
+    if (fresh || !$("#perfhost") || $("#perfhost").dataset.who !== d.drawerId) {
+      app.innerHTML = `
+        <div class="host" id="perfhost" data-who="${d.drawerId}">
+          <div class="topbar">${qcount(s)}${modBadge(s.mod)}</div>
+          <div class="stage">
+            <div class="intro-emoji pop">🎤</div>
+            <div class="star pop"><b>${d.drawerEmoji} ${esc(d.drawerName)}</b> is performing</div>
+            <div class="type">${d.secretType === "movie" ? "🎬 It's a movie" : d.secretType === "song" ? "🎵 It's a song" : "🎵🎬 Song or movie"} · hum it, mime it, no words</div>
+            <div class="dhint" id="hhint"></div>
+          </div>
+          <div class="timer"><div class="timer-fill"></div><span class="timer-num"></span></div>
+          <div class="stage"><div class="feed" id="hfeed"></div><div class="live" id="live"></div></div>
+          <div class="host-foot"><button class="ghost" id="skip">Reveal now ⏭</button></div>
+        </div>`;
+      $("#skip").onclick = () => sendMsg({ t: "skip" });
+    }
+    $("#hhint").textContent = d.hint;
+    $("#hfeed").innerHTML = feedHTML(s.feed);
+    const guessers = s.players.filter((p) => p.connected && p.id !== d.drawerId);
+    $("#live").innerHTML = `<span class="count">${d.got.length}/${guessers.length}</span><span class="muted">got it</span>` +
+      s.players.filter((p) => d.got.includes(p.id)).map((p) => `<span class="in" title="${esc(p.name)}">${p.emoji}</span>`).join("");
     return;
   }
 
@@ -1175,16 +1216,18 @@ function renderHost(fresh) {
     return;
   }
 
-  if (s.phase === "reveal" && s.q.kind === "draw") {
+  if (s.phase === "reveal" && (s.q.kind === "draw" || s.q.kind === "perform")) {
     if (!fresh) return;
-    const r = s.reveal, last = s.qi + 1 >= s.total;
+    const r = s.reveal, last = s.qi + 1 >= s.total, perf = s.q.kind === "perform";
+    const byId = Object.fromEntries(s.players.map((p) => [p.id, p]));
+    const got = `<div class="glist">${r.draw.got.map((g, k) => byId[g.id] ? `<div class="grow2 pop ${k === 0 ? "best" : ""}"><span>${["🥇", "🥈", "🥉"][k] || k + 1}</span><span>${byId[g.id].emoji} ${esc(byId[g.id].name)}</span><span class="v">${(g.t / 1000).toFixed(1)}s</span><small>got it</small></div>` : "").join("") || `<p class="muted">Nobody got it 💀</p>`}</div>`;
     app.innerHTML = `
       <div class="host">
         <div class="topbar">${qcount(s)}${modBadge(s.mod)}</div>
-        <div class="verdict pop"><span class="pill" style="--c:var(--pink)"><small>🎨 The word</small>${esc(r.draw.word)}</span><span>${esc(r.headline.replace(/^.*· /, ""))}</span></div>
+        <div class="verdict pop"><span class="pill" style="--c:var(--pink)"><small>${perf ? "🎤 It was" : "🎨 The word"}</small>${esc(r.draw.word)}</span><span>${esc(r.headline.replace(/^.*· /, ""))}</span></div>
         ${r.roast ? `<p class="roast pop">${esc(r.roast)}</p>` : ""}
-        <div class="reveal-draw">
-          <div class="inkwrap pop"><canvas class="ink"></canvas></div>
+        <div class="${perf ? "reveal-grid" : "reveal-draw"}">
+          ${perf ? got : `<div class="inkwrap pop"><canvas class="ink"></canvas></div>`}
           ${boardHTML(s, r)}
         </div>
         <div class="host-foot"><button class="big" id="next">${last ? "Final results 🏆" : "Next ▶"}</button></div>
@@ -1402,10 +1445,85 @@ function renderInputPlayer() {
   $("#ioverlay").innerHTML = overlaysHTML(me);
 }
 
+// The performer's memory jogger: Apple's official 30s preview, played only on their own device.
+// Prefers the expected artist and skips live, remix, karaoke and cover versions.
+async function findPreview(term) {
+  const data = await fetch(`https://itunes.apple.com/search?media=music&entity=song&limit=15&term=${encodeURIComponent(term)}`).then((r) => r.json()).catch(() => null);
+  const low = (t) => String(t || "").toLowerCase();
+  const words = new Set(low(term).split(/\W+/).filter((w) => w.length > 3));
+  const junk = /\b(live|remix|karaoke|cover|lullaby|piano|instrumental|tribute|acoustic|rendition|made famous)\b/i;
+  const score = (r) => (low(r.artistName).split(/\W+/).some((w) => words.has(w)) ? 2 : 0) - (junk.test(`${r.trackName} ${r.artistName} ${r.collectionName}`) ? 3 : 0);
+  const hit = (data?.results || []).filter((r) => r.previewUrl).sort((a, b) => score(b) - score(a))[0];
+  return hit ? { url: hit.previewUrl, track: hit.trackName, artist: hit.artistName, link: hit.trackViewUrl } : null;
+}
+let snippet = null;
+function stopSnippet() { if (snippet) { snippet.pause(); snippet = null; } }
+async function playSnippet(term) {
+  const btn = $("#snipbtn"), info = $("#snipinfo");
+  if (snippet) { stopSnippet(); btn.textContent = "🎧 Hear a snippet first (headphones on!)"; return; }
+  btn.disabled = true; btn.textContent = "🎧 Loading…";
+  const hit = await findPreview(term);
+  btn.disabled = false;
+  if (!hit?.url) { btn.textContent = "🎧 Couldn't load a snippet. Tap to retry"; return; }
+  snippet = new Audio(hit.url);
+  snippet.volume = 0.8;
+  snippet.onended = () => { snippet = null; if ($("#snipbtn")) $("#snipbtn").textContent = "🎧 Play it again"; };
+  snippet.play().catch(() => {});
+  btn.textContent = "⏹ Stop snippet";
+  info.innerHTML = `Preview: ${esc(hit.track)} · ${esc(hit.artist)} · <a href="${esc(hit.link)}" target="_blank" rel="noopener" style="color:var(--muted)">Apple Music ↗</a>`;
+}
+
+// Perform it: the star sees the secret and a pass button, everyone else gets the guess box.
+function renderPerformPlayer() {
+  const s = state, me = s.me, d = s.draw, star = me.id === d.drawerId;
+  const key = `${s.qi}|${d.drawerId}|${star ? s.q.text : ""}`;
+  if (!$("#perfroot") || $("#perfroot").dataset.key !== key) {
+    stopSnippet();
+    const type = d.secretType === "movie" ? "🎬 a movie" : d.secretType === "song" ? "🎵 a song" : "🎵🎬 a song or movie";
+    app.innerHTML = `<div class="phone" id="perfroot" data-key="${esc(key)}">
+      <div id="dhead"></div>
+      ${modBadge(s.mod)}
+      ${star
+        ? `<div class="secret"><span class="muted">You're performing ${type}:</span><b>${esc(s.q.text)}</b><small class="muted">only you can see this</small></div>
+           <div class="timer"><div class="timer-fill"></div><span class="timer-num"></span></div>
+           <div class="rules"><span>🎵 Hum the tune · 🙌 mime and gesture</span><span>🚫 No words, no lyrics, no spelling it out</span></div>
+           <div class="rules"><button class="ghost" id="snipbtn">🎧 Hear a snippet first (headphones on!)</button><small id="snipinfo"></small></div>
+           <button class="ghost" id="passbtn" ${d.passesLeft > 0 ? "" : "disabled"}>🙈 Pass (don't know it)</button>`
+        : `<div class="dwho" style="text-align:center">🎤 ${d.drawerEmoji} <b>${esc(d.drawerName)}</b> is performing ${type}</div>
+           <p class="muted" style="text-align:center;margin:0">Watch the call! Hum + gestures, no words.</p>
+           <div class="dhint" id="dhint" style="text-align:center"></div>
+           <div class="timer"><div class="timer-fill"></div><span class="timer-num"></span></div>
+           <div id="gbox"></div><div class="feed" id="dfeed"></div>`}
+      <div id="dpowers"></div>
+      <div id="doverlay"></div>
+    </div>${reactsHTML()}`;
+    bindReacts();
+    $("#passbtn") && ($("#passbtn").onclick = () => sendMsg({ t: "pass" }));
+    $("#snipbtn") && ($("#snipbtn").onclick = () => playSnippet(s.preview));
+  }
+  $("#dhead").innerHTML = meHead(s);
+  if (!star) {
+    $("#dhint").textContent = s.q.text || d.hint;
+    const got = me.answer !== null, frozen = serverNow() < me.frozenUntil;
+    if (got) $("#gbox").innerHTML = `<h2 class="display up" style="text-align:center;margin:0">✅ Got it!</h2>`;
+    else if (!$("#ginput")) {
+      $("#gbox").innerHTML = `<form class="gform" id="gform"><input id="ginput" maxlength="40" autocomplete="off" autocapitalize="off" placeholder="Song or movie title…"><button>Guess</button></form>`;
+      $("#gform").onsubmit = (e) => { e.preventDefault(); sendGuess($("#ginput"), sendMsg); };
+    }
+    if ($("#ginput")) $("#ginput").disabled = frozen;
+    $("#dfeed").innerHTML = feedHTML(s.feed);
+  } else if ($("#passbtn")) $("#passbtn").disabled = d.passesLeft <= 0 || d.got.length > 0;
+  $("#dpowers").innerHTML = powersHTML(s, me.answer !== null);
+  bindPowers();
+  $("#doverlay").innerHTML = overlaysHTML(me);
+}
+
 function renderPlayer(fresh) {
   const s = state, me = s.me;
+  if (!(s.phase === "question" && s.q?.kind === "perform" && me.id === s.draw?.drawerId)) stopSnippet();
   if (s.phase === "spin" && !fresh) return;
   if (s.phase === "question" && (s.q?.kind === "draw" || s.q?.kind === "drawoff")) return renderDrawPlayer();
+  if (s.phase === "question" && s.q?.kind === "perform") return renderPerformPlayer();
   if (s.phase === "question" && INPUT_KINDS.includes(s.q?.kind)) return renderInputPlayer();
   const head = `<div class="me"><span class="av">${me.emoji}</span>${esc(me.name)}${s.phase !== "lobby" ? `<span class="rank">#${me.rank} of ${s.playerCount}</span>` : ""}<span class="sc">${me.score}</span></div>`;
   const reacts = reactsHTML();
@@ -1414,7 +1532,8 @@ function renderPlayer(fresh) {
   if (s.phase === "lobby") {
     body = `<div class="center"><div class="huge pop" style="animation:wobble 2s infinite">${me.emoji}</div><h2 class="display pop">You're in!</h2>
       <p class="muted">Eyes on the shared screen. ${s.playerCount} player${s.playerCount > 1 ? "s" : ""} so far.</p>
-      ${s.powerups ? `<p class="muted">🎲 <b>All-in</b> once per game, plus a prank card: ${PRANK_INFO[me.prank]?.[0] ?? "🃏"} <b>${esc(PRANK_INFO[me.prank]?.[1] ?? "a prank")}</b>. Used cards get refilled every few questions.</p>` : ""}</div>`;
+      ${s.powerups ? `<p class="muted">🎲 <b>All-in</b> once per game, plus a prank card: ${PRANK_INFO[me.prank]?.[0] ?? "🃏"} <b>${esc(PRANK_INFO[me.prank]?.[1] ?? "a prank")}</b>. Used cards get refilled every few questions.</p>` : ""}
+      <button class="perfbtn ${me.performer ? "on" : ""}" id="perfbtn">${me.performer ? "🎤 You're on the performer list. Tap to opt out" : "🎤 Happy to hum &amp; mime a song or movie on the call? Tap to opt in"}</button></div>`;
   } else if (s.phase === "spin") {
     body = ["quiz", "vote"].includes(s.kind) ? `<div class="phone-wheel">${wheelHTML(s)}</div>` : introHTML(s);
   } else if (s.phase === "question" && s.q) {
@@ -1439,13 +1558,13 @@ function renderPlayer(fresh) {
       ${overlaysHTML(me)}`;
   } else if (s.phase === "reveal") {
     const r = s.result || { delta: 0, correct: null, note: "" };
-    const draw = s.q?.kind === "draw";
+    const draw = s.q?.kind === "draw" || s.q?.kind === "perform";
     const icon = r.correct === true ? "✅" : r.correct === false ? "❌" : draw ? "🎨" : r.delta > 0 ? "🗳️" : "😶";
     body = `<div class="center">
       <div class="huge pop">${icon}</div>
       <div class="result-delta pop ${r.delta > 0 ? "up" : r.delta < 0 ? "down" : "muted"}">${r.delta > 0 ? "+" : ""}${r.delta}</div>
       ${r.note ? `<p><b>${esc(r.note)}</b></p>` : ""}
-      ${draw ? `<div class="dword"><span class="muted">The word was</span><b>${esc(s.q.text)}</b></div>` : ""}
+      ${draw ? `<div class="dword"><span class="muted">${s.q.kind === "perform" ? "It was" : "The word was"}</span><b>${esc(s.q.text)}</b></div>` : ""}
       ${s.q?.kind === "closest" && s.info ? `<div class="dword"><span class="muted">The answer</span><b>${fmtNum(s.info.answer)}</b>${me.answer !== null ? `<small class="muted">you said ${fmtNum(s.mine.num)}</small>` : ""}</div>` : ""}
       ${s.q?.kind === "hottake" && s.info ? `<div class="dword"><span class="muted">The team</span><b>${s.info.pct}% agree</b>${me.answer !== null ? `<small class="muted">you guessed ${s.mine.pct}%</small>` : ""}</div>` : ""}
       ${s.q && s.winners.length ? `
@@ -1466,6 +1585,7 @@ function renderPlayer(fresh) {
   document.querySelectorAll(".answer").forEach((b) => (b.onclick = () => { navigator.vibrate?.(30); sendMsg({ t: "answer", i: +b.dataset.i }); }));
   bindReacts();
   bindPowers();
+  $("#perfbtn") && ($("#perfbtn").onclick = () => sendMsg({ t: "performer", on: !me.performer }));
   if ($(".frozen")) navigator.vibrate?.([80, 40, 80]);
   if (s.phase === "spin" && ["quiz", "vote"].includes(s.kind)) spinWheel(s);
   if (s.phase === "reveal" && fresh) navigator.vibrate?.(s.result?.delta > 0 ? 60 : [40, 60, 40]);
@@ -1525,7 +1645,7 @@ function dedupe(add, existing) {
 }
 const addedMsg = (n, skipped) => `➕ ${n} question${n === 1 ? "" : "s"} added${skipped ? ` (${skipped} duplicate${skipped > 1 ? "s" : ""} skipped)` : ""}`;
 const blankQ = (kind = "quiz") => ({ kind, text: "", options: ["", "", "", ""], correct: 0 });
-const qValid = (q) => q.kind === "draw" || q.kind === "drawoff" || (!!q.text.trim() && (q.kind === "closest" ? Number.isFinite(q.num) : q.kind !== "quiz" || (q.options.filter((o) => o.trim()).length >= 2 && !!q.options[q.correct]?.trim())));
+const qValid = (q) => q.kind === "draw" || q.kind === "drawoff" || q.kind === "perform" || (!!q.text.trim() && (q.kind === "closest" ? Number.isFinite(q.num) : q.kind !== "quiz" || (q.options.filter((o) => o.trim()).length >= 2 && !!q.options[q.correct]?.trim())));
 
 // Same text format the server reads: "? question", answer lines with * on the right one, "vote: prompt".
 function parseQs(text) {
@@ -1536,7 +1656,7 @@ function parseQs(text) {
     if (!line || line.startsWith("#")) continue;
     const vote = line.match(/^vote:\s*(.+)$/i);
     if (vote) { cur = null; out.push({ ...blankQ("vote"), text: vote[1] }); continue; }
-    const sp = line.match(/^(draw|drawoff|closest|hottake|write):\s*(.*)$/i);
+    const sp = line.match(/^(draw|drawoff|perform|closest|hottake|write):\s*(.*)$/i);
     if (sp) {
       cur = null;
       const kind = sp[1].toLowerCase(), rest = sp[2].trim();
@@ -1564,12 +1684,13 @@ function serializeQs(model) {
   ).join("\n\n");
 }
 
-const EDIT_KINDS = ["quiz", "vote", "draw", "drawoff", "closest", "hottake", "write"];
+const EDIT_KINDS = ["quiz", "vote", "draw", "drawoff", "perform", "closest", "hottake", "write"];
 const EDIT_HINTS = {
   quiz: ["Your question", ""],
   vote: ["Who is most likely to…", "Everyone votes for a teammate. The majority pick scores."],
   draw: ["Word to draw (empty = random)", "A random player draws it on their phone, everyone else types guesses."],
   drawoff: ["Word to draw (empty = random)", "Two players draw the same word at once, everyone else votes for the best."],
+  perform: ["Song or movie (empty = random)", "A volunteer hums and mimes it on the call, everyone else guesses. Only players who opted in get picked."],
   closest: ["A question with a number answer", "Closest guess wins. Only use facts you've checked."],
   hottake: ["A spicy statement", "Agree or disagree, then guess what % of the team agrees."],
   write: ["A prompt, e.g. your first job", "Everyone writes an answer, then the room guesses who wrote what."],
@@ -1582,7 +1703,7 @@ function qcardHTML(q, n) {
       <span class="grow"></span>
       <button class="icon" data-act="up" title="Move up">↑</button><button class="icon" data-act="down" title="Move down">↓</button><button class="icon" data-act="del" title="Delete">✕</button>
     </div>
-    <input data-f="text" maxlength="${q.kind === "draw" || q.kind === "drawoff" ? 30 : 200}" placeholder="${EDIT_HINTS[q.kind][0]}" value="${esc(q.text)}">
+    <input data-f="text" maxlength="${q.kind === "draw" || q.kind === "drawoff" ? 30 : q.kind === "perform" ? 40 : 200}" placeholder="${EDIT_HINTS[q.kind][0]}" value="${esc(q.text)}">
     ${q.kind === "closest" ? `<input data-f="num" type="number" step="any" placeholder="The exact answer" value="${Number.isFinite(q.num) ? q.num : ""}">` : ""}
     ${q.kind !== "quiz" ? `<span class="muted" style="font-size:.85rem">${EDIT_HINTS[q.kind][1]}</span>`
       : `<div class="opts">${q.options.map((o, i) => `<div class="optrow" style="--c:${COLORS[i]}"><button class="mark ${i === q.correct ? "on" : ""}" data-correct="${i}" title="Mark as the right answer">${i === q.correct ? "✔" : SHAPES[i]}</button><input data-opt="${i}" maxlength="80" placeholder="${i < 2 ? "Answer" : "Answer (optional)"}" value="${esc(o)}"></div>`).join("")}</div>`}
@@ -1594,7 +1715,7 @@ function qcardHTML(q, n) {
 function mountEditor(root, model, onChange) {
   const draw = () => {
     root.innerHTML = `<div class="qlist">${model.map(qcardHTML).join("")}</div>
-      <div class="qtools"><button class="ghost" data-add="quiz">+ Quiz question</button><button class="ghost" data-add="vote">+ Team vote</button><button class="ghost" data-add="draw">+ Draw round</button><button class="ghost" data-add="drawoff">+ Draw-off</button><button class="ghost" data-add="closest">+ Closest wins</button><button class="ghost" data-add="hottake">+ Hot take</button><button class="ghost" data-add="write">+ Who wrote it</button></div>`;
+      <div class="qtools"><button class="ghost" data-add="quiz">+ Quiz question</button><button class="ghost" data-add="vote">+ Team vote</button><button class="ghost" data-add="draw">+ Draw round</button><button class="ghost" data-add="drawoff">+ Draw-off</button><button class="ghost" data-add="perform">+ Perform it</button><button class="ghost" data-add="closest">+ Closest wins</button><button class="ghost" data-add="hottake">+ Hot take</button><button class="ghost" data-add="write">+ Who wrote it</button></div>`;
   };
   root.oninput = (e) => {
     const card = e.target.closest(".qcard");
@@ -1714,7 +1835,7 @@ function renderMine() {
   const who = `<span class="who">${me.emoji} ${esc(me.name)} · ${me.score}</span>`;
   mineFrozen = s.phase === "question" && serverNow() < me.frozenUntil;
   let html = who;
-  if (s.phase === "question" && s.q?.kind === "draw") {
+  if (s.phase === "question" && (s.q?.kind === "draw" || s.q?.kind === "perform")) {
     // Patched in place so typing a guess survives state updates.
     if (+bar.dataset.qi !== s.qi || !$("#mstat")) {
       bar.dataset.qi = s.qi;
@@ -1846,7 +1967,7 @@ function renderPanel() {
   if (!ps.contains(document.activeElement)) ps.innerHTML = settingsHTML(s.settings, s.allMods);
   $("#pqn").textContent = s.queue.length;
   $("#pqueue").innerHTML = s.queue.length
-    ? s.queue.map((q) => `<div class="qrow"><div>${(KIND_LABEL[q.kind] || "🧠").split(" ")[0]} ${q.kind === "draw" || q.kind === "drawoff" ? `${kindName(q.kind)}${q.text ? `: ${esc(q.text)}` : " (random word)"}` : q.kind === "closest" ? `${esc(q.text)} <small>= ${fmtNum(q.num)}</small>` : esc(q.text)}${q.kind === "quiz" ? `<br><small>✔ ${esc(q.options[q.correct])}</small>` : ""}</div><button class="ghost" data-rm="${q.i}">✕</button></div>`).join("")
+    ? s.queue.map((q) => `<div class="qrow"><div>${(KIND_LABEL[q.kind] || "🧠").split(" ")[0]} ${q.kind === "draw" || q.kind === "drawoff" || q.kind === "perform" ? `${kindName(q.kind)}${q.text ? `: ${esc(q.text)}` : " (random)"}` : q.kind === "closest" ? `${esc(q.text)} <small>= ${fmtNum(q.num)}</small>` : esc(q.text)}${q.kind === "quiz" ? `<br><small>✔ ${esc(q.options[q.correct])}</small>` : ""}</div><button class="ghost" data-rm="${q.i}">✕</button></div>`).join("")
     : `<p class="muted">${s.phase === "lobby" ? "Questions are set in the lobby on the main screen." : "Nothing queued. Add some below, or the game ends after this one."}</p>`;
   $("#pqueue").querySelectorAll("[data-rm]").forEach((b) => (b.onclick = () => sendMsg({ t: "queueRemove", i: +b.dataset.rm })));
   $("#paddbtn").disabled = s.phase === "lobby" || s.phase === "end";

@@ -20,7 +20,8 @@ interface Settings {
 // draw/drawoff: text is the secret word ("" = pick one). closest: num is the answer.
 // write: text is the prompt; it spawns "who" rounds whose text is one answer, with prompt and authorId set.
 // drawoff spawns a "dvote" round where the room picks the better of the two drawings.
-type Kind = "quiz" | "vote" | "draw" | "drawoff" | "dvote" | "closest" | "hottake" | "write" | "who";
+// perform: a volunteer hums and mimes a song or movie (text, "" = pick one), the rest guess like a draw round.
+type Kind = "quiz" | "vote" | "draw" | "drawoff" | "dvote" | "closest" | "hottake" | "write" | "who" | "perform";
 interface Question {
   kind: Kind;
   text: string;
@@ -57,6 +58,8 @@ interface Player {
   pct: number; // hot take: predicted % of the team that agrees
   text: string; // who wrote it: their answer
   drawn: number; // times this player has been the artist
+  performer: boolean; // opted in to hum and mime
+  performed: number;
   titles: string[]; // won team votes
   stats: Stats;
 }
@@ -135,8 +138,46 @@ const WORDS = [
   "mustache", "glasses", "crown", "trophy", "fire", "lightning", "tree", "mushroom", "island", "pyramid", "moon", "sun", "eye", "nose",
   "hot dog", "taco", "donut", "lemon", "carrot", "egg", "clock", "bomb", "key", "magnet", "anchor", "ladder", "kite", "tent", "bridge",
 ];
+// Perform it: well-known tunes you can hum and mime. Titles only, never lyrics.
+// The third field finds the original recording's official preview clip on the iTunes Search API
+// (looked up by the performer's own browser, so Apple's rate limit is per person, not per Worker).
+const PERFORM: [string, "song" | "movie", string][] = [
+  ["Bohemian Rhapsody", "song", "Queen"], ["Africa", "song", "Toto"], ["Never Gonna Give You Up", "song", "Rick Astley"],
+  ["Billie Jean", "song", "Michael Jackson"], ["Sweet Child O' Mine", "song", "Guns N' Roses"], ["Smells Like Teen Spirit", "song", "Nirvana"],
+  ["Wonderwall", "song", "Oasis"], ["Hey Jude", "song", "The Beatles"], ["Yellow Submarine", "song", "The Beatles"], ["Bad Romance", "song", "Lady Gaga"],
+  ["Shape of You", "song", "Ed Sheeran"], ["Rolling in the Deep", "song", "Adele"], ["Single Ladies", "song", "Beyonce"], ["Happy", "song", "Pharrell Williams"],
+  ["Uptown Funk", "song", "Mark Ronson Bruno Mars"], ["Despacito", "song", "Luis Fonsi"], ["Macarena", "song", "Los del Rio"], ["YMCA", "song", "Village People"],
+  ["Dancing Queen", "song", "ABBA"], ["Take On Me", "song", "a-ha"], ["Livin' on a Prayer", "song", "Bon Jovi"], ["Don't Stop Believin'", "song", "Journey"],
+  ["Eye of the Tiger", "song", "Survivor"], ["We Will Rock You", "song", "Queen"], ["I Will Survive", "song", "Gloria Gaynor"], ["Stayin' Alive", "song", "Bee Gees"],
+  ["Thriller", "song", "Michael Jackson"], ["Toxic", "song", "Britney Spears"], ["...Baby One More Time", "song", "Britney Spears"], ["Wannabe", "song", "Spice Girls"],
+  ["My Heart Will Go On", "song", "Celine Dion"], ["Gangnam Style", "song", "PSY"], ["Seven Nation Army", "song", "The White Stripes"],
+  ["Mr. Brightside", "song", "The Killers"], ["Blinding Lights", "song", "The Weeknd"], ["Shake It Off", "song", "Taylor Swift"],
+  ["Call Me Maybe", "song", "Carly Rae Jepsen"], ["Viva la Vida", "song", "Coldplay"], ["The Final Countdown", "song", "Europe"], ["Barbie Girl", "song", "Aqua"],
+  ["Ice Ice Baby", "song", "Vanilla Ice"], ["Under Pressure", "song", "Queen David Bowie"], ["Sweet Caroline", "song", "Neil Diamond"],
+  ["Let It Go", "song", "Idina Menzel"],
+  ["Star Wars", "movie", "Star Wars Main Title John Williams"], ["Jaws", "movie", "Jaws Main Title John Williams"],
+  ["Mission: Impossible", "movie", "Mission Impossible Theme Lalo Schifrin"], ["Jurassic Park", "movie", "Jurassic Park Theme John Williams"],
+  ["Harry Potter", "movie", "Hedwig's Theme John Williams"], ["The Pink Panther", "movie", "The Pink Panther Theme Henry Mancini"],
+  ["Ghostbusters", "movie", "Ghostbusters Ray Parker Jr"], ["Rocky", "movie", "Gonna Fly Now Bill Conti"], ["The Lion King", "movie", "Circle of Life Elton John"],
+  ["Indiana Jones", "movie", "Raiders March John Williams"], ["Pirates of the Caribbean", "movie", "He's a Pirate Klaus Badelt"],
+  ["James Bond", "movie", "James Bond Theme Monty Norman"], ["Back to the Future", "movie", "Back to the Future Alan Silvestri"],
+  ["The Godfather", "movie", "The Godfather Waltz Nino Rota"], ["Top Gun", "movie", "Danger Zone Kenny Loggins"], ["Titanic", "movie", "My Heart Will Go On Celine Dion"],
+  ["Grease", "movie", "You're the One That I Want John Travolta"], ["Dirty Dancing", "movie", "Time of My Life Bill Medley"], ["E.T.", "movie", "E.T. Flying Theme John Williams"],
+];
 // Lowercase, no accents, no punctuation, no leading article: "The Rubber-Duck!" -> "rubber duck".
 const norm = (t: string) => t.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]+/g, " ").trim().replace(/^(a|an|the) /, "");
+// A guess counts if it's the answer give or take a plural, spacing, a bracketed part, a trailing "theme",
+// or contains every word of a multi-word answer ("star wars theme music" for "Star Wars").
+function guessMatches(guess: string, answer: string): boolean {
+  const g = norm(guess).replace(/ (theme|song|movie|film)$/, "");
+  const alts = new Set([answer, answer.replace(/\(.*?\)/g, ""), ...(answer.match(/\((.*?)\)/g) ?? []).map((x) => x.slice(1, -1))].map(norm).filter(Boolean));
+  for (const a of alts) {
+    if (g === a || g === a + "s" || g + "s" === a || g.replace(/ /g, "") === a.replace(/ /g, "")) return true;
+    const aw = a.split(" "), gw = g.split(" ");
+    if (aw.length >= 2 && gw.length <= aw.length + 3 && aw.every((w) => gw.includes(w) || gw.includes(w + "s"))) return true;
+  }
+  return false;
+}
 function lev(a: string, b: string): number {
   const d = Array.from({ length: b.length + 1 }, (_, j) => j);
   for (let i = 1; i <= a.length; i++) {
@@ -155,7 +196,8 @@ const CLOSEST_MODS: ModId[] = ["vanilla", "double", "speed"];
 const PLAIN_MODS: ModId[] = ["vanilla", "double"];
 const NO_SPIN: Kind[] = ["who", "dvote"]; // follow-ups go straight in
 const WHEEL_KINDS: Kind[] = ["quiz", "vote"]; // the rest get an intro card: their few modifiers would make a coin-flip wheel
-const DURATION: Partial<Record<Kind, number>> = { draw: 60000, drawoff: 60000, write: 45000, who: 20000, dvote: 20000 };
+const GUESS_KINDS: Kind[] = ["draw", "perform"]; // one player performs, everyone else types guesses
+const DURATION: Partial<Record<Kind, number>> = { perform: 60000, draw: 60000, drawoff: 60000, write: 45000, who: 20000, dvote: 20000 };
 
 // Closest wins: only fixed, well-documented facts, nothing that drifts (populations, prices, records).
 const CLOSEST: [string, number][] = [
@@ -247,7 +289,7 @@ function parseQuestions(text: string): Question[] {
   for (const line of lines) {
     if (!line || line.startsWith("#")) continue;
     const vote = line.match(/^vote:\s*(.+)$/i);
-    const special = line.match(/^(draw|drawoff|closest|hottake|write):\s*(.*)$/i);
+    const special = line.match(/^(draw|drawoff|perform|closest|hottake|write):\s*(.*)$/i);
     if (special) {
       if (cur && cur.options.length >= 2 && cur.correct >= 0) out.push(cur);
       cur = null;
@@ -256,8 +298,8 @@ function parseQuestions(text: string): Question[] {
         const m = rest.match(/^(.+?)\s*=\s*(-?[\d.,_ ]+)$/);
         const num = m ? Number(m[2].replace(/[,_ ]/g, "")) : NaN;
         if (m && Number.isFinite(num)) out.push({ kind, text: m[1].slice(0, 200), options: [], correct: -1, num });
-      } else if (kind === "draw" || kind === "drawoff") {
-        out.push({ kind, text: rest.slice(0, 30), options: [], correct: -1 });
+      } else if (kind === "draw" || kind === "drawoff" || kind === "perform") {
+        out.push({ kind, text: rest.slice(0, 40), options: [], correct: -1 });
       } else if (rest) {
         out.push({ kind, text: rest.slice(0, 200), options: [], correct: -1 });
       }
@@ -337,7 +379,7 @@ function similar(a: string, b: string): boolean {
 function dedupe(add: Question[], existing: string[]): Question[] {
   const seen = [...existing];
   return add.filter((q) => {
-    if (q.kind === "draw" || q.kind === "drawoff") return true;
+    if (q.kind === "draw" || q.kind === "drawoff" || q.kind === "perform") return true;
     if (seen.some((t) => similar(t, q.text))) return false;
     seen.push(q.text);
     return true;
@@ -358,8 +400,9 @@ function playSet(builtin: Question[], trivia: Question[], asked: Set<string>): {
   const closest = fresh(CLOSEST, ([t]) => t, 2).map(([text, num]) => ({ ...blank("closest", text), num }));
   const triviaLane = shuffle([...pool.slice(0, 6), ...closest]);
   const sillyLane = shuffle([
-    ...fresh(builtin.filter((q) => q.kind === "vote"), (q) => q.text, 3),
+    ...fresh(builtin.filter((q) => q.kind === "vote"), (q) => q.text, 2),
     ...fresh(HOT_TAKES, (t) => t, 2).map((t) => blank("hottake", t)),
+    blank("perform"),
     blank("write", fresh(WRITE_PROMPTS, (t) => t, 1)[0]),
     blank("draw"),
     blank("drawoff"),
@@ -431,6 +474,9 @@ export class Room extends DurableObject<Env> {
   feed: Guess[] = [];
   hintOrder: number[] = [];
   hintLevel = 0;
+  secretType = ""; // perform: "song" or "movie"
+  secretSearch = ""; // perform: iTunes search term for the preview clip
+  passes = 0;
   hintTimers: ReturnType<typeof setTimeout>[] = [];
   robinUsed = false;
 
@@ -482,7 +528,7 @@ export class Room extends DurableObject<Env> {
         emoji: pick(AVATARS.filter((a) => !used.has(a)).concat(used.size >= AVATARS.length ? AVATARS : [])),
         score: 0, streak: 0, answer: null, answeredAt: 0, perm: null,
         allInUsed: false, allInActive: false, prank: pick(PRANKS), frozenUntil: 0, frozenBy: "",
-        fogUntil: 0, fogBy: "", banana: false, swapPending: false, lastReact: 0, lastGuess: 0, num: 0, pct: 50, text: "", drawn: 0, titles: [], stats: freshStats(),
+        fogUntil: 0, fogBy: "", banana: false, swapPending: false, lastReact: 0, lastGuess: 0, num: 0, pct: 50, text: "", drawn: 0, performer: false, performed: 0, titles: [], stats: freshStats(),
       };
       this.players.set(id, p);
     }
@@ -507,7 +553,7 @@ export class Room extends DurableObject<Env> {
   private bench(): Set<string> {
     const q = this.cur;
     if (!q) return new Set();
-    if (q.kind === "draw") return new Set([this.drawerId]);
+    if (GUESS_KINDS.includes(q.kind)) return new Set([this.drawerId]);
     if (q.kind === "who") return new Set([q.authorId ?? ""]);
     if (q.kind === "drawoff" || q.kind === "dvote") return new Set(this.artists);
     if (q.kind === "write") return new Set([...this.players.values()].filter(isHostSeat).map((p) => p.id));
@@ -597,7 +643,7 @@ export class Room extends DurableObject<Env> {
       for (const ws of sockets) try { ws?.close(4005, "room closed"); } catch {}
     } else if (msg.t === "again" && this.phase === "end") {
       for (const p of this.players.values()) {
-        Object.assign(p, { score: 0, streak: 0, answer: null, allInUsed: false, allInActive: false, prank: pick(PRANKS), frozenUntil: 0, drawn: 0, titles: [], stats: freshStats() });
+        Object.assign(p, { score: 0, streak: 0, answer: null, allInUsed: false, allInActive: false, prank: pick(PRANKS), frozenUntil: 0, drawn: 0, performed: 0, titles: [], stats: freshStats() });
       }
       this.phase = "lobby";
       this.qi = -1;
@@ -659,22 +705,38 @@ export class Room extends DurableObject<Env> {
       if (this.phase !== "question" || k < 0) return;
       this.strokes = this.strokes.filter((x) => x.a !== k);
       this.toAllBut(p.id, { t: "inkClear", a: k });
+    } else if (msg.t === "performer") {
+      if (isHostSeat(p)) return;
+      p.performer = !!msg.on;
+      this.broadcast();
+    } else if (msg.t === "pass") {
+      // The performer doesn't know it, or doesn't want to: hand it to another volunteer, or draw a new one.
+      if (this.phase !== "question" || kind !== "perform" || p.id !== this.drawerId || this.passes >= 2) return;
+      if ([...this.players.values()].some((o) => o.answer !== null)) return this.send(p.ws, { t: "event", text: "Someone already got it, keep going!" });
+      this.passes++;
+      const next = this.volunteers().find((o) => o.id !== p.id);
+      if (next) { p.performed--; next.performed++; this.drawerId = next.id; }
+      this.pickSecret(this.cur!, [this.cur!.text]);
+      this.feed = [];
+      this.event(next ? `🙈 ${p.name} passed to ${next.name}` : `🙈 ${p.name} asked for a different one`);
+      this.clearTimer();
+      this.startQuestion();
     } else if (msg.t === "guess") {
       const q = this.cur;
-      if (this.phase !== "question" || q?.kind !== "draw" || p.id === this.drawerId || p.answer !== null || now < p.frozenUntil) return;
+      if (this.phase !== "question" || !q || !GUESS_KINDS.includes(q.kind) || p.id === this.drawerId || p.answer !== null || now < p.frozenUntil) return;
       if (now - p.lastGuess < 500) return;
       p.lastGuess = now;
       const text = String(msg.text ?? "").trim().slice(0, 40);
       const g = norm(text), word = norm(q.text);
       if (!g) return;
-      if (g === word || g === word + "s" || g + "s" === word || g.replace(/ /g, "") === word.replace(/ /g, "")) {
+      if (guessMatches(text, q.text)) {
         p.answer = 0;
         p.answeredAt = now - this.qStart;
         this.feed.push({ emoji: p.emoji, name: p.name, text: "" });
         this.event(`✅ ${p.name} got it!`);
         this.broadcast();
         this.checkAllIn(1200);
-      } else if (word.length >= 4 && lev(g, word) <= 1) {
+      } else if (word.length >= 4 && lev(g, word) <= Math.max(1, Math.floor(word.length / 8))) {
         this.send(p.ws, { t: "event", text: `🔥 "${text}" is SO close` });
       } else {
         this.feed.push({ emoji: p.emoji, name: p.name, text });
@@ -763,6 +825,14 @@ export class Room extends DurableObject<Env> {
       this.feed = [];
       this.hintLevel = 0;
       this.hintOrder = shuffle([...word].map((ch, i) => (ch === " " ? -1 : i)).filter((i) => i >= 0));
+    } else if (q.kind === "perform") {
+      const star = this.volunteers()[0];
+      if (!star || [...this.players.values()].filter((p) => p.ws).length < 2) return this.nextQuestion();
+      star.performed++;
+      this.drawerId = star.id;
+      this.passes = 0;
+      this.feed = [];
+      this.pickSecret(q, []);
     } else if (q.kind === "drawoff") {
       const pair = shuffle([...this.players.values()].filter((p) => p.ws && !isHostSeat(p))).sort((a, b) => a.drawn - b.drawn).slice(0, 2);
       if (pair.length < 2 || [...this.players.values()].filter((p) => p.ws).length < 3) return this.nextQuestion();
@@ -818,7 +888,7 @@ export class Room extends DurableObject<Env> {
 
   private startQuestion() {
     this.phase = "question";
-    const draw = this.cur?.kind === "draw";
+    const draw = GUESS_KINDS.includes(this.cur!.kind);
     this.qDuration = DURATION[this.cur!.kind] ?? (this.mod === "speed" ? speedMs(this.settings) : this.settings.seconds * 1000);
     this.qStart = Date.now();
     this.broadcast();
@@ -831,17 +901,34 @@ export class Room extends DurableObject<Env> {
     }
   }
 
+  // Opted-in performers, whoever has gone least first. The host's seat would show the answer on the big screen.
+  private volunteers(): Player[] {
+    return shuffle([...this.players.values()].filter((p) => p.ws && p.performer && !isHostSeat(p))).sort((a, b) => a.performed - b.performed);
+  }
+
+  private pickSecret(q: Question, not: string[]) {
+    const unseen = PERFORM.filter(([t]) => !this.asked.has(t) && !not.includes(t));
+    const [title, type, search] = q.text && !not.includes(q.text) ? [q.text, "song or movie", q.text] : pick(unseen.length ? unseen : PERFORM);
+    this.asked.add(title);
+    this.secretType = type;
+    this.secretSearch = type === "song" ? `${title} ${search}` : search;
+    this.cur = { ...q, text: title };
+    this.hintLevel = 0;
+    this.hintOrder = shuffle([...title].map((ch, i) => (/[a-z0-9]/i.test(ch) ? i : -1)).filter((i) => i >= 0));
+  }
+
   private hint(): string {
     const word = this.cur?.text ?? "";
-    const shown = new Set(this.hintOrder.slice(0, this.hintLevel));
-    return [...word].map((ch, i) => (ch === " " ? " " : shown.has(i) ? ch : "_")).join("");
+    const step = Math.max(1, Math.round(this.hintOrder.length / 6));
+    const shown = new Set(this.hintOrder.slice(0, this.hintLevel * step));
+    return [...word].map((ch, i) => (!/[a-z0-9]/i.test(ch) ? ch : shown.has(i) ? ch : "_")).join("");
   }
 
   private doReveal() {
     if (this.phase !== "question" || !this.cur) return;
     this.clearTimer();
     const q = this.cur;
-    if (q.kind === "draw") return this.revealDraw(q);
+    if (GUESS_KINDS.includes(q.kind)) return this.revealDraw(q);
     if (q.kind === "drawoff") return this.toDrawVote(q);
     if (q.kind === "write") return this.toWhoRounds(q);
     if (q.kind === "closest") return this.revealClosest(q);
@@ -1149,7 +1236,8 @@ export class Room extends DurableObject<Env> {
       let delta = artist
         ? 300 * got.length * mult
         : ok ? Math.round(1000 * (1 - (0.5 * Math.min(p.answeredAt, this.qDuration)) / this.qDuration)) * mult : 0;
-      const notes = [artist ? (got.length ? `🎨 ${got.length} got your drawing` : "🎨 nobody got your drawing") : ok ? `🎨 got it in ${(p.answeredAt / 1000).toFixed(1)}s` : "🎨 no luck"];
+      const icon = q.kind === "perform" ? "🎤" : "🎨", work = q.kind === "perform" ? "performance" : "drawing";
+      const notes = [artist ? (got.length ? `${icon} ${got.length} got your ${work}` : `${icon} nobody got your ${work}`) : ok ? `${icon} got it in ${(p.answeredAt / 1000).toFixed(1)}s` : `${icon} no luck`];
       if (ok && !artist) p.stats.slowestRight = Math.max(p.stats.slowestRight, p.answeredAt);
       if (p.allInActive) {
         if (ok) { delta *= 2; notes.push("🎲 all-in paid off"); }
@@ -1161,14 +1249,20 @@ export class Room extends DurableObject<Env> {
     const lines: string[] = [];
     const wrong = this.feed.filter((g) => g.text);
     if (wrong.length) lines.push(...[0, 1].map(() => { const g = pick(wrong); return `Best wrong guess: "${g.text}" (${g.name})`; }));
-    if (!got.length) lines.push(`Nobody got it. ${name} is an abstract artist now.`);
-    if (guessers.length >= 2 && got.length === guessers.length) lines.push(`Everyone got it. ${name}, quit your day job.`);
-    if (!this.strokes.length) lines.push(`${name} didn't draw a single line. Minimalism.`);
+    if (q.kind === "perform") {
+      if (!got.length) lines.push(`Nobody got it. ${name}, that was apparently "${q.text}".`);
+      if (guessers.length >= 2 && got.length === guessers.length) lines.push(`Everyone got it. ${name}, the world tour starts Monday.`);
+      if (got[0] && got[0].answeredAt < 8000) lines.push(`${got[0].name} got it in ${(got[0].answeredAt / 1000).toFixed(1)}s. Suspiciously fast.`);
+    } else {
+      if (!got.length) lines.push(`Nobody got it. ${name} is an abstract artist now.`);
+      if (guessers.length >= 2 && got.length === guessers.length) lines.push(`Everyone got it. ${name}, quit your day job.`);
+      if (!this.strokes.length) lines.push(`${name} didn't draw a single line. Minimalism.`);
+    }
     const roast = lines.length ? pick(lines) : "";
     for (const p of everyone) p.score += results[p.id].delta;
     this.reveal = {
       counts: [], winners: [], results, rankBefore, roast,
-      headline: `🎨 It was "${q.text}" · ${got.length}/${guessers.length} got it`,
+      headline: `${q.kind === "perform" ? "🎤" : "🎨"} It was "${q.text}" · ${got.length}/${guessers.length} got it`,
       picks: Object.fromEntries(everyone.map((p) => [p.id, p.answer])),
       draw: { word: q.text, drawerId: this.drawerId, got: got.map((p) => ({ id: p.id, t: p.answeredAt })) },
     };
@@ -1280,14 +1374,14 @@ export class Room extends DurableObject<Env> {
       role: "host",
       players: this.ranked().map((p) => ({
         id: p.id, name: p.name, emoji: p.emoji, score: p.score, streak: p.streak,
-        connected: !!p.ws, answered: p.answer !== null, allIn: p.allInActive, rank: this.rankOf(p),
+        connected: !!p.ws, answered: p.answer !== null, allIn: p.allInActive, rank: this.rankOf(p), performer: p.performer,
       })),
       // Answers and the queue only go out in gm mode, where the host isn't playing.
-      q: q ? { kind: q.kind, text: q.kind === "draw" && !gm && this.phase !== "reveal" ? "" : q.text, prompt: q.prompt ?? "", options: q.options, correct: gm ? q.correct : -1 } : null,
+      q: q ? { kind: q.kind, text: GUESS_KINDS.includes(q.kind) && !gm && this.phase !== "reveal" ? "" : q.text, prompt: q.prompt ?? "", options: q.options, correct: gm ? q.correct : -1 } : null,
       artists: this.artistsView(),
       bench: [...this.bench()],
       draw: this.drawView(),
-      feed: this.cur?.kind === "draw" ? this.feed.slice(-14) : [],
+      feed: GUESS_KINDS.includes(this.cur?.kind ?? "quiz") ? this.feed.slice(-14) : [],
       settings: this.settings,
       allMods: (Object.keys(MODS) as ModId[]).map((id) => this.modInfo(id)),
       queue: gm ? this.questions.map((q, i) => ({ i, ...q })).slice(this.qi + 1) : [],
@@ -1309,20 +1403,21 @@ export class Room extends DurableObject<Env> {
       role: "player",
       me: {
         id: p.id, name: p.name, emoji: p.emoji, score: p.score, streak: p.streak, rank: this.rankOf(p),
-        answer: p.answer, allInUsed: p.allInUsed, allInActive: p.allInActive, prank: p.prank, swapPending: p.swapPending,
+        answer: p.answer, allInUsed: p.allInUsed, performer: p.performer, hostSeat: isHostSeat(p), allInActive: p.allInActive, prank: p.prank, swapPending: p.swapPending,
         frozenUntil: p.frozenUntil, frozenBy: p.frozenBy, fogUntil: p.fogUntil, fogBy: p.fogBy, banana: p.banana,
       },
       awards: this.phase === "end" ? this.awards().filter((a) => a.id === p.id) : [],
       playerCount: this.players.size,
       q: q && (options.length || (q.kind !== "quiz" && q.kind !== "vote" && this.phase !== "spin"))
-        ? { kind: q.kind, text: q.kind === "draw" && p.id !== this.drawerId && p.answer === null && this.phase !== "reveal" ? "" : q.text, prompt: q.prompt ?? "", options }
+        ? { kind: q.kind, text: GUESS_KINDS.includes(q.kind) && p.id !== this.drawerId && p.answer === null && this.phase !== "reveal" ? "" : q.text, prompt: q.prompt ?? "", options }
         : null,
       artists: this.artistsView(),
       benched: this.bench().has(p.id),
       mine: { num: p.num, pct: p.pct, text: p.text },
       info: this.phase === "reveal" ? r?.info ?? null : null,
       draw: this.drawView(),
-      feed: this.cur?.kind === "draw" ? this.feed.slice(-6) : [],
+      feed: GUESS_KINDS.includes(this.cur?.kind ?? "quiz") ? this.feed.slice(-6) : [],
+      preview: this.cur?.kind === "perform" && p.id === this.drawerId ? this.secretSearch : "",
       result: this.phase === "reveal" && r ? r.results[p.id] ?? null : null,
       winners: this.phase === "reveal" && r ? r.winners : [],
     };
@@ -1335,10 +1430,11 @@ export class Room extends DurableObject<Env> {
   }
 
   private drawView() {
-    if (this.cur?.kind !== "draw") return null;
+    if (!GUESS_KINDS.includes(this.cur?.kind ?? "quiz")) return null;
     const d = this.players.get(this.drawerId);
     return {
       drawerId: this.drawerId, drawerName: d?.name ?? "", drawerEmoji: d?.emoji ?? "🎨", hint: this.hint(),
+      secretType: this.secretType, passesLeft: 2 - this.passes,
       got: [...this.players.values()].filter((p) => p.id !== this.drawerId && p.answer !== null).map((p) => p.id),
     };
   }

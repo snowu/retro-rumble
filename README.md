@@ -6,6 +6,7 @@ Chaotic multiplayer quiz for sprint retros. One person hosts on the shared scree
 
 - 🎡 A chaos wheel before every question: Double Trouble, Speed Demon, Minefield, Heist, Jackpot, Contrarian, Opposite Day, and a once-a-game Robin Hood that swaps first and last place
 - 🎨 Draw rounds: a random player draws a secret word on their phone, everyone else types guesses; letters get revealed as time runs out
+- 🎤 Perform it: an opted-in volunteer hums and mimes a song or movie on the call, everyone else guesses (with an optional 30s preview clip from Apple Music for the performer)
 - 🖌️ Draw-offs: two players draw the same word at once, the room votes for the best one
 - 📏 Closest wins: number questions on fixed, checkable facts; nearest guess takes the points
 - 🔥 Hot takes: agree or disagree, then guess what % of the team agrees
