@@ -987,8 +987,8 @@ function renderPlayer(fresh) {
   } else if (s.phase === "question" && s.q) {
     const answered = me.answer !== null;
     const pickedText = answered ? s.q.options.find((o) => o.i === me.answer)?.text : "";
-    // Scrambled or banana'd buttons colour by position, so they stop matching the big screen.
-    const byPos = s.mod.id === "scramble" || me.banana;
+    // Banana'd buttons colour by position, so they stop matching the big screen.
+    const byPos = me.banana;
     const pr = PRANK_INFO[me.prank];
     body = `
       ${modBadge(s.mod)}
@@ -1016,7 +1016,7 @@ function renderPlayer(fresh) {
       ${r.note ? `<p><b>${esc(r.note)}</b></p>` : ""}
       ${s.q && s.winners.length ? `
         <div class="muted">${s.q.kind === "vote" ? "The team picked" : "Correct answer"}</div>
-        ${s.q.options.map((o, pos) => s.winners.includes(o.i) ? `<div class="answer correct-card pop" style="${tileStyle(s.mod.id === "scramble" || me.banana ? pos : o.i)}"><span>${SHAPES[(s.mod.id === "scramble" || me.banana ? pos : o.i) % SHAPES.length]}</span>${esc(o.text)}</div>` : "").join("")}
+        ${s.q.options.map((o, pos) => s.winners.includes(o.i) ? `<div class="answer correct-card pop" style="${tileStyle(me.banana ? pos : o.i)}"><span>${SHAPES[(me.banana ? pos : o.i) % SHAPES.length]}</span>${esc(o.text)}</div>` : "").join("")}
         ${me.answer !== null && !s.winners.includes(me.answer) ? `<p class="muted">You picked: <b>${esc(s.q.options.find((o) => o.i === me.answer)?.text ?? "")}</b></p>` : ""}` : ""}
       <h2 class="display">#${me.rank} <span class="muted">of ${s.playerCount}</span></h2>
     </div>`;

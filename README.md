@@ -4,7 +4,7 @@ Chaotic multiplayer quiz for sprint retros. One person hosts on the shared scree
 
 **Play:** https://snowu.github.io/retro-rumble/
 
-- 🎡 A chaos wheel before every question: Double Trouble, Speed Demon, Minefield, Heist, Scramble, Jackpot, Contrarian, Opposite Day, Wobbly, Blurry, and a once-a-game Robin Hood that swaps first and last place
+- 🎡 A chaos wheel before every question: Double Trouble, Speed Demon, Minefield, Heist, Jackpot, Contrarian, Opposite Day, Wobbly, Blurry, and a once-a-game Robin Hood that swaps first and last place
 - 🗳️ "Who's most likely to…" vote rounds where your teammates are the answers; the winner is crowned with the title
 - 🎲 All-in once per game, plus a prank card (🧊 Ice, 🍌 Banana, 🌫️ Fog or 🔄 Swap) that refills every 5 questions
 - 🎤 The big screen roasts the room after each reveal

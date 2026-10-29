@@ -6,7 +6,7 @@ interface Env {
 }
 
 type Phase = "lobby" | "spin" | "question" | "reveal" | "end";
-type ModId = "vanilla" | "double" | "speed" | "mines" | "heist" | "scramble" | "jackpot" | "contrarian" | "opposite" | "wobbly" | "blurry" | "robin";
+type ModId = "vanilla" | "double" | "speed" | "mines" | "heist" | "jackpot" | "contrarian" | "opposite" | "wobbly" | "blurry" | "robin";
 type PrankId = "ice" | "banana" | "fog" | "swap";
 // play: the host is also a player and can't edit questions. gm: the host runs everything and doesn't answer.
 type Mode = "play" | "gm";
@@ -88,7 +88,6 @@ const MODS: Record<ModId, { label: string; emoji: string; desc: string; color: s
   speed: { label: "Speed Demon", emoji: "⚡", desc: "Way less time. Go.", color: "#ffd23f" },
   mines: { label: "Minefield", emoji: "💣", desc: "Wrong or no answer: −300", color: "#ff4d4d" },
   heist: { label: "Heist", emoji: "🦹", desc: "Fastest correct answer steals 20% from the leader", color: "#8b5cf6" },
-  scramble: { label: "Scramble", emoji: "🌀", desc: "Every phone gets the answers in a different order", color: "#2de2e6" },
   jackpot: { label: "Jackpot", emoji: "🎰", desc: "Only the fastest correct answer scores: 2000", color: "#3ef08a" },
   contrarian: { label: "Contrarian", emoji: "🙃", desc: "The LEAST picked answer wins", color: "#ff8a3d" },
   opposite: { label: "Opposite Day", emoji: "🔄", desc: "Wrong answers score. The right one costs you 300.", color: "#5b8cff" },
@@ -96,7 +95,7 @@ const MODS: Record<ModId, { label: string; emoji: string; desc: string; color: s
   blurry: { label: "Blurry", emoji: "👓", desc: "Lost my glasses. It sharpens up. Eventually.", color: "#c8d6e5" },
   robin: { label: "Robin Hood", emoji: "🏹", desc: "After this one, first and last place SWAP scores", color: "#2ecc71" },
 };
-const QUIZ_MODS: ModId[] = ["vanilla", "double", "speed", "mines", "heist", "scramble", "jackpot", "opposite", "wobbly", "blurry", "robin"];
+const QUIZ_MODS: ModId[] = ["vanilla", "double", "speed", "mines", "heist", "jackpot", "opposite", "wobbly", "blurry", "robin"];
 const VOTE_MODS: ModId[] = ["vanilla", "double", "speed", "contrarian", "wobbly", "robin"];
 const PRANKS: PrankId[] = ["ice", "banana", "fog", "swap"];
 const FOG_MS = 6000;
@@ -788,7 +787,7 @@ export class Room extends DurableObject<Env> {
     const q = this.cur;
     let options: { i: number; text: string }[] = [];
     if (q && (this.phase === "question" || this.phase === "reveal")) {
-      if (!p.perm) p.perm = this.mod === "scramble" ? shuffle(q.options.map((_, i) => i)) : q.options.map((_, i) => i);
+      if (!p.perm) p.perm = q.options.map((_, i) => i);
       options = p.perm.map((i) => ({ i, text: q.options[i] }));
     }
     const r = this.reveal;
