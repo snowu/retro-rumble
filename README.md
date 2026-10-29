@@ -4,7 +4,7 @@ Chaotic multiplayer quiz for sprint retros. One person hosts on the shared scree
 
 **Play:** https://snowu.github.io/retro-rumble/
 
-- 🎡 A chaos wheel before every question: Double Trouble, Speed Demon, Minefield, Heist, Jackpot, Contrarian, Opposite Day, Wobbly, Blurry, and a once-a-game Robin Hood that swaps first and last place
+- 🎡 A chaos wheel before every question: Double Trouble, Speed Demon, Minefield, Heist, Jackpot, Contrarian, Opposite Day, Blurry, and a once-a-game Robin Hood that swaps first and last place
 - 🎨 Draw rounds: a random player draws a secret word on their phone, everyone else types guesses; letters get revealed as time runs out
 - 🖌️ Draw-offs: two players draw the same word at once, the room votes for the best one
 - 📏 Closest wins: number questions on fixed, checkable facts; nearest guess takes the points

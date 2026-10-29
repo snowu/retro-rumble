@@ -297,12 +297,6 @@ body.gm-host #cpbtn { display: block; }
 /* chaos rounds */
 .fx-blurry .qtext, .fx-blurry .otext { animation: unblur calc(var(--dur) * .6) linear var(--late) both; }
 @keyframes unblur { from { filter: blur(14px); } 75% { filter: blur(3px); } to { filter: blur(0); } }
-.fx-wobbly .answer, .fx-wobbly .tile { animation: drift1 2.3s ease-in-out var(--late) infinite; }
-.fx-wobbly .answer:nth-child(2n), .fx-wobbly .tile:nth-child(2n) { animation-name: drift2; animation-duration: 1.9s; }
-.fx-wobbly .answer:nth-child(3n), .fx-wobbly .tile:nth-child(3n) { animation-name: drift3; animation-duration: 2.7s; }
-@keyframes drift1 { 25% { transform: translate(22px, -10px) rotate(4deg); } 50% { transform: translate(-6px, 14px) rotate(-3deg); } 75% { transform: translate(-24px, -6px) rotate(5deg); } }
-@keyframes drift2 { 25% { transform: translate(-18px, 12px) rotate(-5deg); } 50% { transform: translate(20px, 4px) rotate(3deg); } 75% { transform: translate(4px, -16px) rotate(-2deg); } }
-@keyframes drift3 { 33% { transform: translate(14px, 16px) rotate(6deg) scale(.95); } 66% { transform: translate(-20px, -8px) rotate(-4deg) scale(1.05); } }
 .fog { position: fixed; inset: 0; z-index: 14; pointer-events: none; backdrop-filter: blur(7px); display: grid; place-items: start center; padding-top: 18px;
   background: radial-gradient(circle at 20% 30%, #9a8a7acc 0 14%, transparent 30%), radial-gradient(circle at 75% 55%, #8a7f70cc 0 16%, transparent 34%), radial-gradient(circle at 40% 80%, #a3968599 0 12%, transparent 28%), radial-gradient(circle at 85% 15%, #7d736899 0 10%, transparent 24%), #6b5f5244; }
 .fog span { background: #120a26dd; border-radius: 999px; padding: 8px 16px; font-weight: 800; }
@@ -318,7 +312,6 @@ body.gm-host #cpbtn { display: block; }
 .inkwrap { background: #fff; border-radius: 16px; overflow: hidden; aspect-ratio: 1; width: 100%; box-shadow: 0 0 0 3px var(--line); }
 .inkwrap canvas { display: block; width: 100%; height: 100%; touch-action: none; }
 .fx-blurry canvas.ink { animation: unblur calc(var(--dur) * .6) linear var(--late) both; }
-.fx-wobbly .inkwrap { animation: drift3 2.7s ease-in-out var(--late) infinite; }
 .drawgrid { display: grid; grid-template-columns: min(66vh, 52vw) 1fr; gap: 28px; align-items: start; justify-content: center; }
 @media (max-width: 860px) { .drawgrid { grid-template-columns: 1fr; } }
 .drawside { display: grid; gap: 14px; align-content: start; }
@@ -804,7 +797,7 @@ const shapeChip = (i) => `<span class="shape-chip">${SHAPES[i % SHAPES.length]}<
 const modBadge = (m) => ["who", "dvote", "write"].includes(state?.q?.kind) ? `<span class="muted">${KIND_LABEL[state.q.kind]}</span>` : `<span class="modbadge" style="--c:${m.color}">${m.emoji} <b>${esc(m.label)}</b> <span>· ${esc(m.desc)}</span></span>`;
 // Chaos rounds are just CSS on the question screen. --late keeps the animations in step across re-renders.
 function fxAttrs(s) {
-  const cls = { wobbly: "fx-wobbly", blurry: "fx-blurry" }[s.mod.id] || "";
+  const cls = { blurry: "fx-blurry" }[s.mod.id] || "";
   const late = -Math.max(0, serverNow() - (s.deadline - s.duration));
   return `class="${cls}" style="--dur:${s.duration}ms;--late:${late}ms"`;
 }
