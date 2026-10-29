@@ -125,6 +125,28 @@ input:focus, textarea:focus { outline: none; border-color: var(--cyan); }
 .barrow.lose { opacity: .4; }
 .barrow.win .label::after { content: " ✔"; color: var(--green); }
 .board { display: grid; gap: 8px; align-content: start; }
+.board-title { font-family: Bungee, sans-serif; color: var(--muted); font-size: .9rem; }
+.answer-hero { width: min(100%, 900px); margin: 0 auto; border-radius: 22px; padding: 16px 24px; display: grid; justify-items: center; gap: 2px; text-align: center; box-shadow: 0 0 0 4px #fff, 0 0 50px #3ef08a99; }
+.answer-hero .lbl { font-weight: 800; text-transform: uppercase; letter-spacing: .14em; font-size: .9rem; opacity: .9; }
+.answer-hero .txt { font-family: Bungee, sans-serif; font-size: clamp(1.6rem, 4.4vw, 3rem); line-height: 1.1; }
+.headline { font-size: clamp(1.1rem, 2.4vw, 1.7rem) !important; }
+.rtiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr)); gap: 12px; align-content: start; }
+.rtiles.four { grid-template-columns: 1fr 1fr; }
+.rtile { border-radius: 16px; padding: 14px 16px; display: grid; gap: 10px; font-weight: 800; align-content: start; transition: filter .3s; }
+.rtile.lose { filter: saturate(.3) brightness(.5); }
+.rtile.win { box-shadow: 0 0 0 3px #fff, 0 0 26px #3ef08a88; }
+.rt-top { display: flex; align-items: center; gap: 10px; font-size: 1.25rem; }
+.rt-text { flex: 1; }
+.rt-count { font-family: Bungee, sans-serif; background: #0005; border-radius: 999px; padding: 2px 12px; }
+.rt-who { display: flex; flex-wrap: wrap; gap: 6px; min-height: 30px; }
+.rt-who span { display: inline-flex; align-items: center; gap: 4px; background: #0004; border-radius: 999px; padding: 2px 10px 2px 4px; font-size: 1.2rem; }
+.rt-who small { font-size: .8rem; }
+.rt-who .rt-none { background: none; font-size: .85rem; opacity: .7; }
+.brow .nt { display: block; font-size: .78rem; color: var(--muted); font-weight: 600; }
+.brow .delta { padding: 3px 10px; border-radius: 999px; font-family: Bungee, sans-serif; font-size: .85rem; }
+.brow .delta.up { background: #3ef08a22; }
+.brow .delta.down { background: #ff4d6d22; }
+.brow .delta.zero { color: var(--muted); }
 .brow { display: grid; grid-template-columns: 34px 40px 1fr auto auto; align-items: center; gap: 8px; background: var(--panel); border: 2px solid var(--line); border-radius: 14px; padding: 8px 12px; font-weight: 800; }
 .brow .rk { font-family: Bungee, sans-serif; color: var(--muted); }
 .brow .av { font-size: 1.6rem; }
@@ -694,29 +716,43 @@ function renderHost(fresh) {
 
   if (s.phase === "reveal") {
     if (!fresh) return;
-    const r = s.reveal, max = Math.max(1, ...r.counts);
+    const r = s.reveal;
     const last = s.qi + 1 >= s.total;
+    const vote = s.q.kind === "vote";
+    const byId = Object.fromEntries(s.players.map((p) => [p.id, p]));
+    const pickers = (i) => Object.entries(r.picks).filter(([, a]) => a === i).map(([id]) => byId[id]).filter(Boolean);
+    const hero = r.winners.length
+      ? `<div class="answer-hero pop" style="${tileStyle(r.winners[0])}">
+          <span class="lbl">${vote ? (s.mod.id === "contrarian" ? "🙃 Least picked wins" : "🗳️ The team picked") : "✔ Correct answer"}</span>
+          <span class="txt">${r.winners.map((i) => `${SHAPES[i % SHAPES.length]} ${esc(s.q.options[i])}`).join(" &amp; ")}</span>
+        </div>`
+      : "";
     app.innerHTML = `
       <div class="host">
         <div class="topbar">${qcount(s)}${modBadge(s.mod)}</div>
         <h2 class="qtext small">${esc(s.q.text)}</h2>
-        <div class="headline pop">${esc(r.headline)}</div>
+        ${hero}
+        ${vote && r.winners.length ? "" : `<div class="headline pop">${esc(r.headline)}</div>`}
         <div class="reveal-grid">
-          <div class="bars">
-            ${s.q.options.map((o, i) => `
-              <div class="barrow ${r.winners.includes(i) ? "win" : "lose"}">
-                <span class="label">${SHAPES[i % SHAPES.length]} ${esc(o)}</span><span>${r.counts[i]}</span>
-                <div class="track"><div class="fill" data-w="${(r.counts[i] / max) * 100}" style="${tileStyle(i)}"></div></div>
-              </div>`).join("")}
+          <div class="rtiles ${s.q.options.length <= 4 ? "four" : ""}">
+            ${s.q.options.map((o, i) => {
+              const who = pickers(i);
+              return `<div class="rtile pop ${r.winners.includes(i) ? "win" : "lose"}" style="${tileStyle(i)}">
+                <div class="rt-top"><span class="shape">${SHAPES[i % SHAPES.length]}</span><span class="rt-text">${esc(o)}</span><span class="rt-count">${r.counts[i]}</span></div>
+                <div class="rt-who">${who.map((p) => `<span title="${esc(p.name)}">${p.emoji}<small>${esc(p.name)}</small></span>`).join("") || `<span class="rt-none">nobody</span>`}</div>
+              </div>`;
+            }).join("")}
           </div>
           <div class="board">
+            <div class="board-title">Leaderboard</div>
             ${s.players.slice(0, 8).map((p) => {
-              const res = r.results[p.id] || { delta: 0 };
+              const res = r.results[p.id] || { delta: 0, note: "" };
               const before = r.rankBefore[p.id], moved = before ? before - p.rank : 0;
+              const note = res.note || (r.picks[p.id] == null ? "no answer" : "");
               return `<div class="brow pop">
                 <span class="rk">${p.rank}</span><span class="av">${p.emoji}</span>
-                <span class="nm">${esc(p.name)} ${p.streak >= 3 ? "🔥" : ""} ${moved > 0 ? `<span class="up">▲${moved}</span>` : moved < 0 ? `<span class="down">▼${-moved}</span>` : ""}</span>
-                <span class="delta ${res.delta > 0 ? "up" : res.delta < 0 ? "down" : "muted"}">${res.delta > 0 ? "+" : ""}${res.delta || ""}</span>
+                <span class="nm">${esc(p.name)} ${p.streak >= 3 ? "🔥" : ""} ${moved > 0 ? `<span class="up">▲${moved}</span>` : moved < 0 ? `<span class="down">▼${-moved}</span>` : ""}${note ? `<span class="nt">${esc(note)}</span>` : ""}</span>
+                <span class="delta ${res.delta > 0 ? "up" : res.delta < 0 ? "down" : "zero"}">${res.delta > 0 ? "+" : ""}${res.delta}</span>
                 <span class="sc" data-from="${p.score - res.delta}" data-to="${p.score}">${p.score - res.delta}</span>
               </div>`;
             }).join("")}
@@ -725,7 +761,6 @@ function renderHost(fresh) {
         <div class="host-foot"><button class="big" id="next">${last ? "Final results 🏆" : "Next ▶"}</button></div>
       </div>`;
     sfx.reveal();
-    requestAnimationFrame(() => requestAnimationFrame(() => document.querySelectorAll(".fill").forEach((f) => (f.style.width = f.dataset.w + "%"))));
     setTimeout(() => document.querySelectorAll(".sc").forEach((el) => countUp(el, +el.dataset.from, +el.dataset.to)), 700);
     $("#next").onclick = () => sendMsg({ t: "next" });
     return;

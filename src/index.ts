@@ -53,6 +53,7 @@ interface Reveal {
   headline: string;
   results: Record<string, Result>;
   rankBefore: Record<string, number>;
+  picks: Record<string, number | null>;
 }
 
 const MODS: Record<ModId, { label: string; emoji: string; desc: string; color: string }> = {
@@ -436,7 +437,8 @@ export class Room extends DurableObject<Env> {
     }
 
     for (const p of everyone) p.score += results[p.id].delta;
-    this.reveal = { counts, winners, headline, results, rankBefore };
+    const picks = Object.fromEntries(everyone.map((p) => [p.id, p.answer]));
+    this.reveal = { counts, winners, headline, results, rankBefore, picks };
     this.phase = "reveal";
     this.broadcast();
   }
