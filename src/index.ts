@@ -6,7 +6,7 @@ interface Env {
 }
 
 type Phase = "lobby" | "spin" | "question" | "reveal" | "end";
-type ModId = "vanilla" | "double" | "speed" | "mines" | "heist" | "scramble" | "jackpot" | "contrarian" | "opposite" | "wobbly" | "upside" | "blurry" | "robin";
+type ModId = "vanilla" | "double" | "speed" | "mines" | "heist" | "scramble" | "jackpot" | "contrarian" | "opposite" | "wobbly" | "blurry" | "robin";
 type PrankId = "ice" | "banana" | "fog" | "swap";
 // play: the host is also a player and can't edit questions. gm: the host runs everything and doesn't answer.
 type Mode = "play" | "gm";
@@ -93,12 +93,11 @@ const MODS: Record<ModId, { label: string; emoji: string; desc: string; color: s
   contrarian: { label: "Contrarian", emoji: "🙃", desc: "The LEAST picked answer wins", color: "#ff8a3d" },
   opposite: { label: "Opposite Day", emoji: "🔄", desc: "Wrong answers score. The right one costs you 300.", color: "#5b8cff" },
   wobbly: { label: "Wobbly", emoji: "🫨", desc: "The buttons have had a few drinks", color: "#ff9ff3" },
-  upside: { label: "Upside Down", emoji: "🤸", desc: "Australian edition", color: "#7bed9f" },
   blurry: { label: "Blurry", emoji: "👓", desc: "Lost my glasses. It sharpens up. Eventually.", color: "#c8d6e5" },
   robin: { label: "Robin Hood", emoji: "🏹", desc: "After this one, first and last place SWAP scores", color: "#2ecc71" },
 };
-const QUIZ_MODS: ModId[] = ["vanilla", "double", "speed", "mines", "heist", "scramble", "jackpot", "opposite", "wobbly", "upside", "blurry", "robin"];
-const VOTE_MODS: ModId[] = ["vanilla", "double", "speed", "contrarian", "wobbly", "upside", "robin"];
+const QUIZ_MODS: ModId[] = ["vanilla", "double", "speed", "mines", "heist", "scramble", "jackpot", "opposite", "wobbly", "blurry", "robin"];
+const VOTE_MODS: ModId[] = ["vanilla", "double", "speed", "contrarian", "wobbly", "robin"];
 const PRANKS: PrankId[] = ["ice", "banana", "fog", "swap"];
 const FOG_MS = 6000;
 const isHostSeat = (p: Player) => p.id.startsWith("host-"); // the host's own seat answers on the big screen

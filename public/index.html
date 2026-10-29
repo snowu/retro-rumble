@@ -294,7 +294,6 @@ body.gm-host #cpbtn { display: block; }
 }
 @media (min-width: 760px) and (hover: hover) { .answer kbd { display: inline-block; } }
 /* chaos rounds */
-.fx-upside { transform: rotate(180deg); } /* on the wrapper: the pop animation owns the text's own transform */
 .fx-blurry .qtext, .fx-blurry .otext { animation: unblur calc(var(--dur) * .6) linear var(--late) both; }
 @keyframes unblur { from { filter: blur(14px); } 75% { filter: blur(3px); } to { filter: blur(0); } }
 .fx-wobbly .answer, .fx-wobbly .tile { animation: drift1 2.3s ease-in-out var(--late) infinite; }
@@ -722,8 +721,8 @@ const colorVar = (i) => `--c:${COLORS[i % COLORS.length]}`;
 const shapeChip = (i) => `<span class="shape-chip">${SHAPES[i % SHAPES.length]}</span>`;
 const modBadge = (m) => `<span class="modbadge" style="--c:${m.color}">${m.emoji} <b>${esc(m.label)}</b> <span>· ${esc(m.desc)}</span></span>`;
 // Chaos rounds are just CSS on the question screen. --late keeps the animations in step across re-renders.
-function fxAttrs(s, part = "opts") {
-  const cls = { wobbly: "fx-wobbly", blurry: "fx-blurry", ...(part === "q" ? { upside: "fx-upside" } : {}) }[s.mod.id] || "";
+function fxAttrs(s) {
+  const cls = { wobbly: "fx-wobbly", blurry: "fx-blurry" }[s.mod.id] || "";
   const late = -Math.max(0, serverNow() - (s.deadline - s.duration));
   return `class="${cls}" style="--dur:${s.duration}ms;--late:${late}ms"`;
 }
@@ -858,7 +857,7 @@ function renderHost(fresh) {
       app.innerHTML = `
         <div class="host">
           <div class="topbar">${qcount(s)}${modBadge(s.mod)}</div>
-          <div ${fxAttrs(s, "q")}>
+          <div ${fxAttrs(s)}>
             <h1 class="qtext pop">${esc(s.q.text)}</h1>
           </div>
           <div class="timer"><div class="timer-fill"></div><span class="timer-num"></span></div>
@@ -993,7 +992,7 @@ function renderPlayer(fresh) {
     const pr = PRANK_INFO[me.prank];
     body = `
       ${modBadge(s.mod)}
-      <div ${fxAttrs(s, "q")}><h2 class="qtext">${esc(s.q.text)}</h2></div>
+      <div ${fxAttrs(s)}><h2 class="qtext">${esc(s.q.text)}</h2></div>
       <div class="timer"><div class="timer-fill"></div><span class="timer-num"></span></div>
       ${answered
         ? `<div class="center"><div class="huge">🤞</div><h2 class="display">Locked in</h2><p>${esc(pickedText)}</p>${me.allInActive ? `<p class="up"><b>🎲 ALL-IN</b></p>` : ""}</div>`
