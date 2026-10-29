@@ -17,11 +17,19 @@ interface Settings {
   powerups: boolean;
 }
 
+// draw/drawoff: text is the secret word ("" = pick one). closest: num is the answer.
+// write: text is the prompt; it spawns "who" rounds whose text is one answer, with prompt and authorId set.
+// drawoff spawns a "dvote" round where the room picks the better of the two drawings.
+type Kind = "quiz" | "vote" | "draw" | "drawoff" | "dvote" | "closest" | "hottake" | "write" | "who";
 interface Question {
-  kind: "quiz" | "vote" | "draw"; // a draw round's text is its secret word ("" = pick one)
+  kind: Kind;
   text: string;
   options: string[];
   correct: number;
+  num?: number;
+  prompt?: string;
+  authorId?: string;
+  artists?: string[];
 }
 
 interface Player {
@@ -45,6 +53,9 @@ interface Player {
   swapPending: boolean;
   lastReact: number;
   lastGuess: number;
+  num: number; // closest guess
+  pct: number; // hot take: predicted % of the team that agrees
+  text: string; // who wrote it: their answer
   drawn: number; // times this player has been the artist
   titles: string[]; // won team votes
   stats: Stats;
@@ -83,10 +94,12 @@ interface Reveal {
   picks: Record<string, number | null>;
   roast: string;
   draw: { word: string; drawerId: string; got: { id: string; t: number }[] } | null;
+  info?: Record<string, unknown>; // per-kind extras for the reveal screen
 }
 
 interface Stroke {
   id: string;
+  a: number; // which artist, for draw-offs
   c: string;
   w: number;
   pts: number[]; // x,y pairs on a 0-1000 square
@@ -114,7 +127,6 @@ const MODS: Record<ModId, { label: string; emoji: string; desc: string; color: s
 const QUIZ_MODS: ModId[] = ["vanilla", "double", "speed", "mines", "heist", "jackpot", "opposite", "wobbly", "blurry", "robin"];
 const VOTE_MODS: ModId[] = ["vanilla", "double", "speed", "contrarian", "wobbly", "robin"];
 const DRAW_MODS: ModId[] = ["vanilla", "double", "blurry", "wobbly"];
-const DRAW_MS = 60000;
 const MAX_INK = 30000; // numbers, roughly 15k points per drawing
 const INK_COLORS = ["#111111", "#ffffff", "#e53935", "#1e88e5", "#43a047", "#fdd835", "#fb8c00", "#8e24aa", "#6d4c41"];
 const WORDS = [
@@ -142,6 +154,56 @@ function lev(a: string, b: string): number {
   return d[b.length];
 }
 const PRANKS: PrankId[] = ["ice", "banana", "fog", "swap"];
+const CLOSEST_MODS: ModId[] = ["vanilla", "double", "speed"];
+const PLAIN_MODS: ModId[] = ["vanilla", "double"];
+const NO_SPIN: Kind[] = ["write", "who", "dvote"]; // follow-ups and writing rounds go straight in
+const DURATION: Partial<Record<Kind, number>> = { draw: 60000, drawoff: 60000, write: 45000, who: 20000, dvote: 20000 };
+
+// Closest wins: only fixed, well-documented facts, nothing that drifts (populations, prices, records).
+const CLOSEST: [string, number][] = [
+  ["How many bones are in the adult human body?", 206],
+  ["How many keys does a standard piano have?", 88],
+  ["In what year did Apollo 11 land on the Moon?", 1969],
+  ["How tall is Mount Everest, in metres?", 8849],
+  ["How many member states does the United Nations have?", 193],
+  ["In what year was Python first released?", 1991],
+  ["In what year was Git first released?", 2005],
+  ["In what year did the Berlin Wall fall?", 1989],
+  ["How many minutes are there in a week?", 10080],
+  ["How many Earth days does Mars take to orbit the Sun?", 687],
+  ["How many elements are in the periodic table?", 118],
+  ["How many squares of all sizes are there on a chessboard?", 204],
+  ["How many dots are there in total on a standard six-sided die?", 21],
+  ["What's the largest number a signed 32-bit integer can hold?", 2147483647],
+  ["In what year did the Titanic sink?", 1912],
+  ["How many time zones does Russia span?", 11],
+  ["How many years did the Hundred Years' War last?", 116],
+  ["On average, how far is the Moon from Earth, in kilometres?", 384400],
+  ["What is the speed of light, in kilometres per second (rounded)?", 299792],
+  ["In what year was the first email sent?", 1971],
+  ["In what year did JavaScript first appear?", 1995],
+  ["How many seconds are there in a day?", 86400],
+  ["Unix time counts seconds since January 1st of which year?", 1970],
+  ["How many teeth does an adult human have, wisdom teeth included?", 32],
+  ["How many coloured stickers are on a standard Rubik's Cube?", 54],
+  ["How long is a marathon, in metres?", 42195],
+  ["How many characters could a tweet have when Twitter launched?", 140],
+  ["At what temperature does water boil at sea level, in Fahrenheit?", 212],
+];
+const HOT_TAKES = [
+  "Tabs are better than spaces", "Pineapple belongs on pizza", "Meetings without an agenda should be cancelled automatically",
+  "Cameras should be on in every video call", "Dark mode is the only acceptable mode", "Deploying on a Friday is fine",
+  "Working from home beats the office", "Most stand-ups could be a Slack message", "Story points are made up",
+  "Replying \"ok.\" with a full stop is passive-aggressive", "A hot dog is a sandwich", "Cereal is a soup",
+  "Mondays aren't that bad", "Emojis belong in work emails", "We should all have a four-day week",
+  "Unread notification badges are fine to ignore forever", "Good code doesn't need comments", "Breakfast is the best meal of the day",
+];
+const WRITE_PROMPTS = [
+  "The worst bug you ever shipped", "Your most-used emoji", "The first concert you went to", "A weird food combo you secretly love",
+  "Your go-to karaoke song", "Your very first job", "The app you'd delete from everyone's phone", "Your guilty-pleasure TV show",
+  "A skill nobody here knows you have", "Your most controversial coffee opinion", "The best thing that happened this sprint",
+  "Your dream retirement, in one sentence",
+];
 const FOG_MS = 6000;
 const isHostSeat = (p: Player) => p.id.startsWith("host-"); // the host's own seat answers on the big screen
 
@@ -186,11 +248,20 @@ function parseQuestions(text: string): Question[] {
   for (const line of lines) {
     if (!line || line.startsWith("#")) continue;
     const vote = line.match(/^vote:\s*(.+)$/i);
-    const draw = line.match(/^draw:\s*(.*)$/i);
-    if (draw) {
+    const special = line.match(/^(draw|drawoff|closest|hottake|write):\s*(.*)$/i);
+    if (special) {
       if (cur && cur.options.length >= 2 && cur.correct >= 0) out.push(cur);
       cur = null;
-      out.push({ kind: "draw", text: draw[1].trim().slice(0, 30), options: [], correct: -1 });
+      const kind = special[1].toLowerCase() as Kind, rest = special[2].trim();
+      if (kind === "closest") {
+        const m = rest.match(/^(.+?)\s*=\s*(-?[\d.,_ ]+)$/);
+        const num = m ? Number(m[2].replace(/[,_ ]/g, "")) : NaN;
+        if (m && Number.isFinite(num)) out.push({ kind, text: m[1].slice(0, 200), options: [], correct: -1, num });
+      } else if (kind === "draw" || kind === "drawoff") {
+        out.push({ kind, text: rest.slice(0, 30), options: [], correct: -1 });
+      } else if (rest) {
+        out.push({ kind, text: rest.slice(0, 200), options: [], correct: -1 });
+      }
       continue;
     }
     if (vote || line.startsWith("?")) {
@@ -267,29 +338,33 @@ function similar(a: string, b: string): boolean {
 function dedupe(add: Question[], existing: string[]): Question[] {
   const seen = [...existing];
   return add.filter((q) => {
-    if (q.kind === "draw") return true;
+    if (q.kind === "draw" || q.kind === "drawoff") return true;
     if (seen.some((t) => similar(t, q.text))) return false;
     seen.push(q.text);
     return true;
   });
 }
 
-// Play along: fresh trivia plus a few built-in trick questions, a team vote every 4th round.
+// Play along: ten quiz questions (fresh trivia plus a few built-in trick ones),
+// each followed by one of the other round types.
 function playSet(builtin: Question[], trivia: Question[], asked: Set<string>): Question[] {
-  const fresh = (qs: Question[]) => (qs.filter((q) => !asked.has(q.text)).length >= 4 ? qs.filter((q) => !asked.has(q.text)) : qs);
-  const votes = shuffle(builtin.filter((q) => q.kind === "vote")).slice(0, 4);
-  const classics = shuffle(fresh(builtin.filter((q) => q.kind === "quiz")));
-  const picked = classics.slice(0, 4);
-  const extra = dedupe(trivia, [...asked, ...picked.map((q) => q.text)]).slice(0, 12);
-  const quiz = extra.length >= 8 ? shuffle([...extra, ...picked]) : classics;
-  const out: Question[] = [];
-  const draw: Question = { kind: "draw", text: "", options: [], correct: -1 };
-  quiz.forEach((q, i) => {
-    out.push(q);
-    if (i % 4 === 3 && votes.length) out.push(votes.shift()!);
-    if (i === 5 || i === 10) out.push({ ...draw }); // two draw rounds per game
-  });
-  return [...out, ...votes];
+  const fresh = <T>(xs: T[], text: (x: T) => string, n: number) => {
+    const unseen = xs.filter((x) => !asked.has(text(x)));
+    return shuffle(unseen.length >= n ? unseen : xs).slice(0, n);
+  };
+  const classics = fresh(builtin.filter((q) => q.kind === "quiz"), (q) => q.text, 10);
+  const extra = dedupe(trivia, [...asked, ...classics.map((q) => q.text)]).slice(0, 7);
+  const quiz = extra.length >= 5 ? shuffle([...extra, ...classics.slice(0, 10 - extra.length)]) : classics;
+  const blank = (kind: Kind, text = ""): Question => ({ kind, text, options: [], correct: -1 });
+  const specials = shuffle([
+    ...fresh(builtin.filter((q) => q.kind === "vote"), (q) => q.text, 3),
+    ...fresh(CLOSEST, ([t]) => t, 2).map(([text, num]) => ({ ...blank("closest", text), num })),
+    ...fresh(HOT_TAKES, (t) => t, 2).map((t) => blank("hottake", t)),
+    blank("write", fresh(WRITE_PROMPTS, (t) => t, 1)[0]),
+    blank("draw"),
+    blank("drawoff"),
+  ]);
+  return quiz.flatMap((q, i) => (specials[i] ? [q, specials[i]] : [q]));
 }
 
 // "Who is most likely to push to main?" becomes "most likely to push to main".
@@ -349,6 +424,7 @@ export class Room extends DurableObject<Env> {
   asked = new Set<string>(); // question texts already played in this room, so reruns stay fresh
   voteIds: string[] = []; // player ids behind the current vote's options
   drawerId = "";
+  artists: string[] = []; // the two players in a draw-off
   strokes: Stroke[] = [];
   inkSize = 0;
   feed: Guess[] = [];
@@ -405,7 +481,7 @@ export class Room extends DurableObject<Env> {
         emoji: pick(AVATARS.filter((a) => !used.has(a)).concat(used.size >= AVATARS.length ? AVATARS : [])),
         score: 0, streak: 0, answer: null, answeredAt: 0, perm: null,
         allInUsed: false, allInActive: false, prank: pick(PRANKS), frozenUntil: 0, frozenBy: "",
-        fogUntil: 0, fogBy: "", banana: false, swapPending: false, lastReact: 0, lastGuess: 0, drawn: 0, titles: [], stats: freshStats(),
+        fogUntil: 0, fogBy: "", banana: false, swapPending: false, lastReact: 0, lastGuess: 0, num: 0, pct: 50, text: "", drawn: 0, titles: [], stats: freshStats(),
       };
       this.players.set(id, p);
     }
@@ -423,7 +499,28 @@ export class Room extends DurableObject<Env> {
   }
 
   private drawing() {
-    return (this.phase === "question" || this.phase === "reveal") && this.cur?.kind === "draw";
+    return (this.phase === "question" || this.phase === "reveal") && ["draw", "drawoff", "dvote"].includes(this.cur?.kind ?? "");
+  }
+
+  // Who sits this round out: the artist, the author, the draw-off pair, or the host's seat when writing.
+  private bench(): Set<string> {
+    const q = this.cur;
+    if (!q) return new Set();
+    if (q.kind === "draw") return new Set([this.drawerId]);
+    if (q.kind === "who") return new Set([q.authorId ?? ""]);
+    if (q.kind === "drawoff" || q.kind === "dvote") return new Set(this.artists);
+    if (q.kind === "write") return new Set([...this.players.values()].filter(isHostSeat).map((p) => p.id));
+    return new Set();
+  }
+
+  // Everyone who can still answer has: reveal a moment later.
+  private checkAllIn(delay = 800) {
+    const bench = this.bench();
+    const live = [...this.players.values()].filter((o) => o.ws && !bench.has(o.id));
+    if (live.length && live.every((o) => o.answer !== null)) {
+      this.clearTimer();
+      this.timer = setTimeout(() => this.doReveal(), delay);
+    }
   }
 
   private sendInk(ws: WebSocket) {
@@ -431,9 +528,9 @@ export class Room extends DurableObject<Env> {
   }
 
   // Strokes go to every screen but the artist's own.
-  private toViewers(msg: unknown) {
+  private toAllBut(id: string, msg: unknown) {
     this.toHosts(msg);
-    for (const p of this.players.values()) if (p.id !== this.drawerId) this.send(p.ws, msg);
+    for (const p of this.players.values()) if (p.id !== id) this.send(p.ws, msg);
   }
 
   private parse(data: unknown): Record<string, unknown> | null {
@@ -512,20 +609,37 @@ export class Room extends DurableObject<Env> {
     const msg = this.parse(data);
     if (!msg) return;
     const now = Date.now();
+    const canAnswer = this.phase === "question" && !!this.cur && p.answer === null && now >= p.frozenUntil && !this.bench().has(p.id);
+    const kind = this.cur?.kind;
     if (msg.t === "answer") {
       const i = Number(msg.i);
-      if (this.phase !== "question" || !this.cur || p.answer !== null || now < p.frozenUntil) return;
-      if (!Number.isInteger(i) || i < 0 || i >= this.cur.options.length) return;
+      if (!canAnswer || !Number.isInteger(i) || i < 0 || i >= this.cur!.options.length) return;
+      if (kind === "who" && this.voteIds[i] === p.id) return; // you know you didn't write it
       p.answer = i;
       p.answeredAt = now - this.qStart;
       this.broadcast();
-      const live = [...this.players.values()].filter((o) => o.ws);
-      if (live.every((o) => o.answer !== null)) {
-        this.clearTimer();
-        this.timer = setTimeout(() => this.doReveal(), 800);
-      }
+      this.checkAllIn();
+    } else if (msg.t === "num") {
+      const v = Number(String(msg.v ?? "").replace(/[,_ ]/g, ""));
+      if (!canAnswer || kind !== "closest" || !Number.isFinite(v) || Math.abs(v) > 1e13) return;
+      Object.assign(p, { answer: 0, num: v, answeredAt: now - this.qStart });
+      this.broadcast();
+      this.checkAllIn();
+    } else if (msg.t === "take") {
+      const pct = Math.round(Number(msg.pct));
+      if (!canAnswer || kind !== "hottake" || !(pct >= 0 && pct <= 100)) return;
+      Object.assign(p, { answer: msg.agree ? 0 : 1, pct, answeredAt: now - this.qStart });
+      this.broadcast();
+      this.checkAllIn();
+    } else if (msg.t === "write") {
+      const text = String(msg.text ?? "").replace(/\s+/g, " ").trim().slice(0, 120);
+      if (!canAnswer || kind !== "write" || !text) return;
+      Object.assign(p, { answer: 0, text, answeredAt: now - this.qStart });
+      this.broadcast();
+      this.checkAllIn(400);
     } else if (msg.t === "ink") {
-      if (this.phase !== "question" || this.cur?.kind !== "draw" || p.id !== this.drawerId || now < p.frozenUntil) return;
+      const k = kind === "draw" ? (p.id === this.drawerId ? 0 : -1) : kind === "drawoff" ? this.artists.indexOf(p.id) : -1;
+      if (this.phase !== "question" || k < 0 || now < p.frozenUntil) return;
       const id = String(msg.id ?? "").slice(0, 40);
       const raw = Array.isArray(msg.pts) ? msg.pts.slice(0, 400) : [];
       const pts = raw.map((v) => Math.max(0, Math.min(1000, Math.round(Number(v) || 0))));
@@ -533,15 +647,16 @@ export class Room extends DurableObject<Env> {
       this.inkSize += pts.length;
       let st = this.strokes.find((x) => x.id === id);
       if (!st) {
-        st = { id, c: INK_COLORS.includes(String(msg.c)) ? String(msg.c) : INK_COLORS[0], w: Math.max(4, Math.min(80, Number(msg.w) || 10)), pts: [] };
+        st = { id, a: k, c: INK_COLORS.includes(String(msg.c)) ? String(msg.c) : INK_COLORS[0], w: Math.max(4, Math.min(80, Number(msg.w) || 10)), pts: [] };
         this.strokes.push(st);
       }
       st.pts.push(...pts);
-      this.toViewers({ t: "ink", id, c: st.c, w: st.w, pts });
+      this.toAllBut(p.id, { t: "ink", id, a: k, c: st.c, w: st.w, pts });
     } else if (msg.t === "inkClear") {
-      if (this.phase !== "question" || this.cur?.kind !== "draw" || p.id !== this.drawerId) return;
-      this.strokes = [];
-      this.toViewers({ t: "inkAll", qi: this.qi, strokes: [] });
+      const k = kind === "draw" ? (p.id === this.drawerId ? 0 : -1) : kind === "drawoff" ? this.artists.indexOf(p.id) : -1;
+      if (this.phase !== "question" || k < 0) return;
+      this.strokes = this.strokes.filter((x) => x.a !== k);
+      this.toAllBut(p.id, { t: "inkClear", a: k });
     } else if (msg.t === "guess") {
       const q = this.cur;
       if (this.phase !== "question" || q?.kind !== "draw" || p.id === this.drawerId || p.answer !== null || now < p.frozenUntil) return;
@@ -556,11 +671,7 @@ export class Room extends DurableObject<Env> {
         this.feed.push({ emoji: p.emoji, name: p.name, text: "" });
         this.event(`✅ ${p.name} got it!`);
         this.broadcast();
-        const guessers = [...this.players.values()].filter((o) => o.ws && o.id !== this.drawerId);
-        if (guessers.every((o) => o.answer !== null)) {
-          this.clearTimer();
-          this.timer = setTimeout(() => this.doReveal(), 1200);
-        }
+        this.checkAllIn(1200);
       } else if (word.length >= 4 && lev(g, word) <= 1) {
         this.send(p.ws, { t: "event", text: `🔥 "${text}" is SO close` });
       } else {
@@ -578,14 +689,14 @@ export class Room extends DurableObject<Env> {
       if (this.phase !== "question" || !this.settings.powerups || !p.prank) return;
       const open = [...this.players.values()].filter((o) => o.id !== p.id && o.ws && o.answer === null);
       if (p.prank === "swap") {
-        if (this.cur?.kind === "draw") return this.send(p.ws, { t: "event", text: "Nothing to swap in a draw round. Keep it for later" });
+        if (kind !== "quiz" && kind !== "vote") return this.send(p.ws, { t: "event", text: "Nothing to swap this round. Keep it for later" });
         if (p.swapPending) return;
         p.swapPending = true;
         p.prank = null;
         this.event(`🔄 ${p.name} is planning a swap 👀`);
         return this.broadcast();
       }
-      if (p.prank === "banana" && this.cur?.kind === "draw") return this.send(p.ws, { t: "event", text: "No buttons to banana in a draw round. Keep it for later" });
+      if (p.prank === "banana" && !this.cur?.options.length) return this.send(p.ws, { t: "event", text: "No buttons to banana this round. Keep it for later" });
       const target =
         p.prank === "ice" ? this.ranked().find((o) => open.includes(o) && o.frozenUntil < now)
         : p.prank === "banana" ? pick(open.filter((o) => !o.banana && !isHostSeat(o)))
@@ -650,12 +761,36 @@ export class Room extends DurableObject<Env> {
       this.feed = [];
       this.hintLevel = 0;
       this.hintOrder = shuffle([...word].map((ch, i) => (ch === " " ? -1 : i)).filter((i) => i >= 0));
+    } else if (q.kind === "drawoff") {
+      const pair = shuffle([...this.players.values()].filter((p) => p.ws && !isHostSeat(p))).sort((a, b) => a.drawn - b.drawn).slice(0, 2);
+      if (pair.length < 2 || [...this.players.values()].filter((p) => p.ws).length < 3) return this.nextQuestion();
+      for (const p of pair) p.drawn++;
+      this.artists = pair.map((p) => p.id);
+      const unseen = WORDS.filter((w) => !this.asked.has(w));
+      const word = q.text || pick(unseen.length ? unseen : WORDS);
+      this.asked.add(word);
+      this.cur = { ...q, text: word, artists: this.artists };
+      this.strokes = [];
+      this.inkSize = 0;
+    } else if (q.kind === "dvote") {
+      const pair = this.artists.map((id) => this.players.get(id));
+      if (pair.some((p) => !p)) return this.nextQuestion();
+      this.voteIds = [...this.artists];
+      this.cur = { ...q, options: pair.map((p) => `${p!.emoji} ${p!.name}`) };
+    } else if (q.kind === "who") {
+      const ps = [...this.players.values()];
+      if (!this.players.get(q.authorId ?? "")) return this.nextQuestion();
+      this.voteIds = ps.map((p) => p.id);
+      this.cur = { ...q, options: ps.map((p) => `${p.emoji} ${p.name}`), correct: this.voteIds.indexOf(q.authorId!) };
+    } else if (q.kind === "write" && [...this.players.values()].filter((p) => p.ws && !isHostSeat(p)).length < 3) {
+      return this.nextQuestion(); // who wrote it needs a few writers to be a guess
     } else {
       this.cur = q;
     }
     // Robin Hood is a once-a-game outrage, and only once there's something to steal.
     const robinOk = !this.robinUsed && this.players.size >= 3 && this.qi >= 3;
-    const pool = (q.kind === "quiz" ? QUIZ_MODS : q.kind === "draw" ? DRAW_MODS : VOTE_MODS).filter((m) => this.settings.mods.includes(m) && (m !== "robin" || robinOk));
+    const pools: Partial<Record<Kind, ModId[]>> = { quiz: QUIZ_MODS, vote: VOTE_MODS, draw: DRAW_MODS, closest: CLOSEST_MODS, hottake: PLAIN_MODS, drawoff: PLAIN_MODS };
+    const pool = (pools[q.kind] ?? ["vanilla"]).filter((m) => this.settings.mods.includes(m) && (m !== "robin" || robinOk));
     this.modPool = pool.length ? pool : ["vanilla"];
     this.modIndex = Math.floor(Math.random() * this.modPool.length);
     this.mod = this.modPool[this.modIndex];
@@ -663,10 +798,16 @@ export class Room extends DurableObject<Env> {
     const refill = this.qi > 0 && this.qi % 5 === 0;
     if (refill && [...this.players.values()].some((p) => !p.prank)) this.event("🃏 Fresh prank cards for everyone who used theirs");
     for (const p of this.players.values()) {
-      Object.assign(p, { answer: null, answeredAt: 0, perm: null, allInActive: false, frozenUntil: 0, fogUntil: 0, banana: false, swapPending: false });
+      Object.assign(p, { answer: null, answeredAt: 0, perm: null, allInActive: false, frozenUntil: 0, fogUntil: 0, banana: false, swapPending: false, num: 0, pct: 50 });
       if (refill && !p.prank) p.prank = pick(PRANKS);
     }
     this.reveal = null;
+    if (NO_SPIN.includes(q.kind)) {
+      this.modPool = ["vanilla"];
+      this.modIndex = 0;
+      this.mod = "vanilla";
+      return this.startQuestion();
+    }
     this.phase = "spin";
     this.broadcast();
     this.timer = setTimeout(() => this.startQuestion(), SPIN_MS);
@@ -675,9 +816,11 @@ export class Room extends DurableObject<Env> {
   private startQuestion() {
     this.phase = "question";
     const draw = this.cur?.kind === "draw";
-    this.qDuration = draw ? DRAW_MS : this.mod === "speed" ? speedMs(this.settings) : this.settings.seconds * 1000;
+    this.qDuration = DURATION[this.cur!.kind] ?? (this.mod === "speed" ? speedMs(this.settings) : this.settings.seconds * 1000);
     this.qStart = Date.now();
     this.broadcast();
+    // The vote round after a draw-off shows both drawings again on every screen.
+    if (this.cur?.kind === "dvote") this.toAllBut("", { t: "inkAll", qi: this.qi, strokes: this.strokes });
     this.timer = setTimeout(() => this.doReveal(), this.qDuration + 300);
     // Draw rounds give away a letter at half time and another at three quarters.
     if (draw && this.hintOrder.length >= 3) {
@@ -696,6 +839,11 @@ export class Room extends DurableObject<Env> {
     this.clearTimer();
     const q = this.cur;
     if (q.kind === "draw") return this.revealDraw(q);
+    if (q.kind === "drawoff") return this.toDrawVote(q);
+    if (q.kind === "write") return this.toWhoRounds(q);
+    if (q.kind === "closest") return this.revealClosest(q);
+    if (q.kind === "hottake") return this.revealTake(q);
+    if (q.kind === "who" || q.kind === "dvote") return this.revealPick(q);
     const everyone = [...this.players.values()];
     const ranked = this.ranked();
     const rankBefore = Object.fromEntries(ranked.map((p) => [p.id, this.rankOf(p)]));
@@ -817,6 +965,167 @@ export class Room extends DurableObject<Env> {
     for (const p of everyone) p.score += results[p.id].delta;
     const picks = Object.fromEntries(everyone.map((p) => [p.id, p.answer]));
     this.reveal = { counts, winners, headline, results, rankBefore, picks, roast, draw: null };
+    this.phase = "reveal";
+    this.broadcast();
+  }
+
+  // Shared ending for the newer round types: apply the deltas and show the reveal.
+  private finish(results: Record<string, Result>, rankBefore: Record<string, number>, headline: string, roast: string, info: Record<string, unknown>) {
+    const everyone = [...this.players.values()];
+    for (const p of everyone) p.score += results[p.id]?.delta ?? 0;
+    this.reveal = {
+      counts: [], winners: [], results, rankBefore, headline, roast, draw: null, info,
+      picks: Object.fromEntries(everyone.map((p) => [p.id, p.answer])),
+    };
+    this.phase = "reveal";
+    this.broadcast();
+  }
+
+  private rankSnapshot() {
+    return Object.fromEntries([...this.players.values()].map((p) => [p.id, this.rankOf(p)]));
+  }
+
+  // All-in on the newer rounds: doubles a win, costs 500 otherwise.
+  private allIn(p: Player, won: boolean, r: Result) {
+    if (!p.allInActive) return;
+    if (won) { r.delta *= 2; r.note += " · 🎲 all-in paid off"; }
+    else { r.delta -= 500; p.stats.allInLost += 500; r.note += " · 🎲 all-in busted"; }
+  }
+
+  private revealClosest(q: Question) {
+    const rankBefore = this.rankSnapshot();
+    const answer = q.num ?? 0;
+    const mult = this.mod === "double" ? 2 : 1;
+    const everyone = [...this.players.values()];
+    const guessed = everyone.filter((p) => p.answer !== null).sort((a, b) => Math.abs(a.num - answer) - Math.abs(b.num - answer));
+    const results: Record<string, Result> = {};
+    const PRIZES = [1000, 600, 300];
+    const fmt = (n: number) => n.toLocaleString("en-US", { maximumFractionDigits: 3 });
+    for (const p of everyone) {
+      if (p.answer === null) { p.stats.ghost++; results[p.id] = { delta: 0, correct: null, note: "no guess" }; continue; }
+      const diff = Math.abs(p.num - answer);
+      const place = guessed.findIndex((o) => Math.abs(o.num - answer) === diff); // ties share a place
+      let delta = (PRIZES[place] ?? 0) + (diff === 0 ? 500 : 0);
+      delta *= mult;
+      const r: Result = { delta, correct: place === 0, note: diff === 0 ? "🎯 bullseye" : `guessed ${fmt(p.num)}, off by ${fmt(diff)}` };
+      this.allIn(p, place === 0, r);
+      results[p.id] = r;
+    }
+    const best = guessed[0], worst = guessed[guessed.length - 1];
+    const lines: string[] = [];
+    if (best && best.num === answer) lines.push(`${best.name} nailed it exactly. Suspicious.`);
+    if (worst && guessed.length >= 2 && worst !== best) lines.push(`${worst.name} guessed ${fmt(worst.num)}. Off by ${fmt(Math.abs(worst.num - answer))}.`);
+    if (!guessed.length) lines.push("Nobody even guessed. It's a number, not a commitment.");
+    this.finish(results, rankBefore,
+      best ? `📏 The answer: ${fmt(answer)} · closest: ${best.emoji} ${best.name}` : `📏 The answer: ${fmt(answer)}`,
+      lines.length ? pick(lines) : "",
+      { answer, guesses: guessed.map((p) => ({ id: p.id, v: p.num, diff: Math.abs(p.num - answer) })) });
+  }
+
+  private revealTake(q: Question) {
+    const rankBefore = this.rankSnapshot();
+    const mult = this.mod === "double" ? 2 : 1;
+    const everyone = [...this.players.values()];
+    const voted = everyone.filter((p) => p.answer !== null);
+    const agree = voted.filter((p) => p.answer === 0), disagree = voted.filter((p) => p.answer === 1);
+    const pct = voted.length ? Math.round((100 * agree.length) / voted.length) : 0;
+    const results: Record<string, Result> = {};
+    for (const p of everyone) {
+      if (p.answer === null) { p.stats.ghost++; results[p.id] = { delta: 0, correct: null, note: "sat this one out" }; continue; }
+      const off = Math.abs(p.pct - pct);
+      const r: Result = { delta: Math.max(0, Math.round(1000 - 25 * off)) * mult, correct: off <= 10, note: `guessed ${p.pct}%${off <= 5 ? " · 🔮 mind reader" : ""}` };
+      this.allIn(p, off <= 10, r);
+      results[p.id] = r;
+    }
+    const lines: string[] = [];
+    if (voted.length >= 3 && agree.length === 1) lines.push(`${agree[0].name} is the only one who agrees. Brave.`);
+    if (voted.length >= 3 && disagree.length === 1) lines.push(`${disagree[0].name} is the only one who disagrees. Brave.`);
+    if (voted.length >= 2 && (!agree.length || !disagree.length)) lines.push("Unanimous. Not much of a hot take, then.");
+    if (voted.length >= 2 && agree.length === disagree.length) lines.push("A perfect split. Enjoy the next retro.");
+    const best = voted.sort((a, b) => Math.abs(a.pct - pct) - Math.abs(b.pct - pct))[0];
+    if (best && Math.abs(best.pct - pct) <= 5) lines.push(`${best.name} called it at ${best.pct}%. Knows you all too well.`);
+    this.finish(results, rankBefore, `🔥 ${pct}% of the team agree`, lines.length ? pick(lines) : "",
+      { pct, agree: agree.map((p) => p.id), disagree: disagree.map((p) => p.id) });
+  }
+
+  // Writing time is over: up to three answers become "who wrote this?" rounds, straight after.
+  private toWhoRounds(q: Question) {
+    const entries = shuffle([...this.players.values()].filter((p) => p.answer !== null && p.text));
+    if (entries.length < 2) {
+      this.event("✍️ Not enough answers for Who wrote it. Moving on");
+      return this.nextQuestion();
+    }
+    const rounds = entries.slice(0, 3).map((p): Question => ({ kind: "who", text: p.text, prompt: q.text, authorId: p.id, options: [], correct: -1 }));
+    this.questions.splice(this.qi + 1, 0, ...rounds);
+    this.event(`✍️ ${entries.length} answers are in. Who wrote what?`);
+    this.nextQuestion();
+  }
+
+  private toDrawVote(q: Question) {
+    this.questions.splice(this.qi + 1, 0, { kind: "dvote", text: q.text, options: [], correct: -1, artists: this.artists });
+    this.nextQuestion();
+  }
+
+  // "Who wrote it" and the draw-off vote: pick a player, the bench (author or artists) scores from the picks.
+  private revealPick(q: Question) {
+    const rankBefore = this.rankSnapshot();
+    const everyone = [...this.players.values()];
+    const bench = this.bench();
+    const counts = q.options.map(() => 0);
+    for (const p of everyone) if (p.answer !== null) counts[p.answer]++;
+    const voters = everyone.filter((p) => !bench.has(p.id));
+    const results: Record<string, Result> = {};
+    let winners: number[], headline: string;
+    const lines: string[] = [];
+    const nameOf = (i: number) => this.players.get(this.voteIds[i])?.name ?? "?";
+    if (q.kind === "who") {
+      winners = [q.correct];
+      const author = this.players.get(q.authorId!)!;
+      const right = voters.filter((p) => p.answer === q.correct), fooled = voters.filter((p) => p.answer !== null && p.answer !== q.correct);
+      for (const p of voters) {
+        const ok = p.answer === q.correct;
+        if (p.answer === null) p.stats.ghost++;
+        const r: Result = { delta: ok ? Math.round(1000 * (1 - (0.5 * Math.min(p.answeredAt, this.qDuration)) / this.qDuration)) : 0, correct: ok, note: ok ? "✍️ saw right through it" : p.answer === null ? "no guess" : "✍️ fooled" };
+        this.allIn(p, ok, r);
+        results[p.id] = r;
+      }
+      const ra: Result = { delta: 200 * fooled.length, correct: null, note: fooled.length ? `✍️ you fooled ${fooled.length}` : "✍️ everyone knew it was you" };
+      this.allIn(author, fooled.length > 0, ra);
+      results[author.id] = ra;
+      headline = `✍️ Written by ${author.emoji} ${author.name} · ${right.length}/${voters.length} guessed it`;
+      if (voters.length >= 2 && !right.length) lines.push(`Nobody suspected ${author.name}. Undercover legend.`);
+      if (voters.length >= 2 && right.length === voters.length) lines.push(`Everyone knew it was ${author.name}. Very on brand.`);
+      const top = counts.map((c, i) => [c, i]).filter(([, i]) => i !== q.correct).sort((a, b) => b[0] - a[0])[0];
+      if (top && top[0] >= 2) lines.push(`${top[0]} of you thought it was ${nameOf(top[1])}. ${nameOf(top[1])}, are you OK with that?`);
+    } else {
+      const most = Math.max(0, ...counts);
+      winners = most ? counts.map((c, i) => [c, i]).filter(([c]) => c === most).map(([, i]) => i) : [];
+      for (const p of voters) {
+        if (p.answer === null) p.stats.ghost++;
+        const won = p.answer !== null && winners.includes(p.answer);
+        const r: Result = { delta: won ? 300 : 0, correct: null, note: won ? "🖌️ backed the winner" : p.answer === null ? "didn't vote" : "🖌️ backed the loser" };
+        this.allIn(p, won, r);
+        results[p.id] = r;
+      }
+      this.artists.forEach((id, i) => {
+        const a = this.players.get(id);
+        if (!a) return;
+        const r: Result = { delta: 400 * counts[i], correct: null, note: `🖌️ ${counts[i]} vote${counts[i] === 1 ? "" : "s"}${winners.includes(i) ? " · 🏆 winner" : ""}` };
+        this.allIn(a, winners.includes(i), r);
+        results[id] = r;
+      });
+      headline = !winners.length ? "Nobody voted. Art is dead." : winners.length > 1 ? "🖌️ It's a tie" : `🏆 ${nameOf(winners[0])} wins the draw-off`;
+      if (winners.length > 1) lines.push("A tie. Everyone's a winner, nobody's happy.");
+      else if (winners.length === 1) {
+        const loser = 1 - winners[0];
+        lines.push(counts[loser] ? `${nameOf(loser)} got ${counts[loser]} vote${counts[loser] === 1 ? "" : "s"}. Art is subjective.` : `${nameOf(loser)} got zero votes. Brutal.`);
+      }
+    }
+    for (const p of everyone) p.score += results[p.id]?.delta ?? 0;
+    this.reveal = {
+      counts, winners, headline, results, rankBefore, roast: lines.length ? pick(lines) : "", draw: null,
+      picks: Object.fromEntries(everyone.map((p) => [p.id, p.answer])),
+    };
     this.phase = "reveal";
     this.broadcast();
   }
@@ -968,7 +1277,9 @@ export class Room extends DurableObject<Env> {
         connected: !!p.ws, answered: p.answer !== null, allIn: p.allInActive, rank: this.rankOf(p),
       })),
       // Answers and the queue only go out in gm mode, where the host isn't playing.
-      q: q ? { kind: q.kind, text: q.kind === "draw" && !gm && this.phase !== "reveal" ? "" : q.text, options: q.options, correct: gm ? q.correct : -1 } : null,
+      q: q ? { kind: q.kind, text: q.kind === "draw" && !gm && this.phase !== "reveal" ? "" : q.text, prompt: q.prompt ?? "", options: q.options, correct: gm ? q.correct : -1 } : null,
+      artists: this.artistsView(),
+      bench: [...this.bench()],
       draw: this.drawView(),
       feed: this.cur?.kind === "draw" ? this.feed.slice(-14) : [],
       settings: this.settings,
@@ -997,14 +1308,24 @@ export class Room extends DurableObject<Env> {
       },
       awards: this.phase === "end" ? this.awards().filter((a) => a.id === p.id) : [],
       playerCount: this.players.size,
-      q: q && (options.length || (q.kind === "draw" && this.phase !== "spin"))
-        ? { kind: q.kind, text: q.kind === "draw" && p.id !== this.drawerId && p.answer === null && this.phase !== "reveal" ? "" : q.text, options }
+      q: q && (options.length || (q.kind !== "quiz" && q.kind !== "vote" && this.phase !== "spin"))
+        ? { kind: q.kind, text: q.kind === "draw" && p.id !== this.drawerId && p.answer === null && this.phase !== "reveal" ? "" : q.text, prompt: q.prompt ?? "", options }
         : null,
+      artists: this.artistsView(),
+      benched: this.bench().has(p.id),
+      mine: { num: p.num, pct: p.pct, text: p.text },
+      info: this.phase === "reveal" ? r?.info ?? null : null,
       draw: this.drawView(),
       feed: this.cur?.kind === "draw" ? this.feed.slice(-6) : [],
       result: this.phase === "reveal" && r ? r.results[p.id] ?? null : null,
       winners: this.phase === "reveal" && r ? r.winners : [],
     };
+  }
+
+  private artistsView() {
+    const k = this.cur?.kind;
+    if (k !== "drawoff" && k !== "dvote") return [];
+    return this.artists.map((id) => this.players.get(id)).filter((p): p is Player => !!p).map((p) => ({ id: p.id, name: p.name, emoji: p.emoji }));
   }
 
   private drawView() {

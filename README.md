@@ -6,6 +6,10 @@ Chaotic multiplayer quiz for sprint retros. One person hosts on the shared scree
 
 - 🎡 A chaos wheel before every question: Double Trouble, Speed Demon, Minefield, Heist, Jackpot, Contrarian, Opposite Day, Wobbly, Blurry, and a once-a-game Robin Hood that swaps first and last place
 - 🎨 Draw rounds: a random player draws a secret word on their phone, everyone else types guesses; letters get revealed as time runs out
+- 🖌️ Draw-offs: two players draw the same word at once, the room votes for the best one
+- 📏 Closest wins: number questions on fixed, checkable facts; nearest guess takes the points
+- 🔥 Hot takes: agree or disagree, then guess what % of the team agrees
+- ✍️ Who wrote it: everyone answers a prompt, then the room guesses who wrote what
 - 🗳️ "Who's most likely to…" vote rounds where your teammates are the answers; the winner is crowned with the title
 - 🎲 All-in once per game, plus a prank card (🧊 Ice, 🍌 Banana, 🌫️ Fog or 🔄 Swap) that refills every 5 questions
 - 🎤 The big screen roasts the room after each reveal
