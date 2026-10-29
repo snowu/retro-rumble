@@ -16,6 +16,7 @@
 :root {
   --bg: #0d0820; --bg2: #1a0f3a; --panel: #1d1340; --line: #3a2a6e;
   --ink: #f6f1ff; --muted: #a99cc9;
+  --surface: #1a1238; --surface-2: #231950; --border: #ffffff14;
   --pink: #ff3d9a; --cyan: #2de2e6; --yellow: #ffd23f; --green: #3ef08a; --red: #ff4d6d;
 }
 * { box-sizing: border-box; }
@@ -29,7 +30,7 @@ body {
 body::before { /* synthwave grid floor */
   content: ""; position: fixed; inset: 55% -50% -10%; z-index: -1; pointer-events: none;
   background-image: linear-gradient(var(--pink) 1px, transparent 1px), linear-gradient(90deg, var(--pink) 1px, transparent 1px);
-  background-size: 60px 60px; opacity: .13; transform: perspective(300px) rotateX(60deg);
+  background-size: 60px 60px; opacity: .06; transform: perspective(300px) rotateX(60deg);
   animation: grid 4s linear infinite;
 }
 @keyframes grid { to { background-position: 0 60px; } }
@@ -68,8 +69,8 @@ input:focus, textarea:focus { outline: none; border-color: var(--cyan); }
 /* host */
 .host { min-height: 100vh; padding: 24px clamp(16px, 4vw, 48px); display: flex; flex-direction: column; gap: 20px; }
 .topbar { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
-.qcount { font-family: Bungee, sans-serif; color: var(--muted); }
-.modbadge { padding: 8px 14px; border-radius: 999px; font-weight: 800; color: #120a26; }
+.qcount { color: var(--muted); font-weight: 600; font-size: .95rem; } .qcount b { color: var(--ink); }
+.modbadge { padding: 7px 14px; border-radius: 999px; font-weight: 600; font-size: .95rem; color: var(--ink); background: color-mix(in srgb, var(--c) 16%, transparent); border: 1px solid color-mix(in srgb, var(--c) 45%, transparent); } .modbadge b { color: var(--c); } .modbadge span { color: var(--muted); }
 .lobby-grid { display: grid; grid-template-columns: minmax(260px, 340px) 1fr; gap: 24px; flex: 1; }
 @media (max-width: 760px) { .lobby-grid { grid-template-columns: 1fr; } }
 .joinbox { background: var(--panel); border: 2px solid var(--line); border-radius: 24px; padding: 24px; text-align: center; display: grid; gap: 10px; justify-items: center; align-content: start; }
@@ -101,22 +102,24 @@ input:focus, textarea:focus { outline: none; border-color: var(--cyan); }
 .mod-reveal .m-label { font-family: Bungee, sans-serif; font-size: clamp(2rem, 5vw, 3.4rem); }
 .mod-reveal .m-desc { font-size: 1.3rem; color: var(--muted); }
 
-.qtext { font-family: Bungee, sans-serif; font-size: clamp(1.6rem, 4vw, 3rem); text-align: center; margin: 0; line-height: 1.15; text-wrap: balance; }
-.qtext.small { font-size: clamp(1.1rem, 2.4vw, 1.7rem); }
+.qtext { font-weight: 800; font-size: clamp(1.8rem, 3.8vw, 3.1rem); letter-spacing: -.02em; text-align: center; margin: 0; line-height: 1.15; text-wrap: balance; }
+.qtext.small { font-size: clamp(1.3rem, 2.4vw, 1.9rem); color: var(--muted); }
 .timer { position: relative; height: 22px; background: #0006; border-radius: 999px; overflow: hidden; border: 2px solid var(--line); }
 .timer-fill { position: absolute; inset: 0; background: linear-gradient(90deg, var(--green), var(--yellow), var(--red)); background-size: 300% 100%; transform-origin: left; }
 .timer-num { position: absolute; right: 10px; top: 50%; transform: translateY(-50%); font-family: Bungee, sans-serif; font-size: .8rem; }
 .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr)); gap: 14px; }
 .tiles.four { grid-template-columns: repeat(2, 1fr); }
-.tile { border-radius: 18px; padding: 22px; font-size: clamp(1.1rem, 2.4vw, 1.7rem); font-weight: 800; display: flex; align-items: center; gap: 14px; box-shadow: 0 6px 0 #0005; }
-.tile .shape { font-size: 1.6em; opacity: .85; }
+.tile { --c: #888; background: var(--surface); border: 1px solid var(--border); border-radius: 18px; padding: 18px 20px; font-size: clamp(1.15rem, 2.1vw, 1.55rem); font-weight: 700; display: flex; align-items: center; gap: 16px; }
+.shape-chip { flex: none; width: 46px; height: 46px; border-radius: 12px; background: var(--c); color: #fff; display: grid; place-items: center; font-size: 1.3rem; box-shadow: 0 4px 14px color-mix(in srgb, var(--c) 40%, transparent); }
 .live { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; min-height: 54px; }
 .live .count { font-family: Bungee, sans-serif; font-size: 1.6rem; }
 .live .in { font-size: 2rem; animation: pop .4s cubic-bezier(.2, 1.6, .4, 1) both; position: relative; }
 .live .in.allin::after { content: "🎲"; position: absolute; font-size: .9rem; right: -6px; bottom: -4px; }
 .host-foot { display: flex; justify-content: flex-end; gap: 12px; margin-top: auto; }
 
-.headline { font-family: Bungee, sans-serif; font-size: clamp(1.4rem, 3.4vw, 2.4rem); text-align: center; color: var(--yellow); text-shadow: 0 0 20px #ffd23f66; }
+.verdict { display: flex; justify-content: center; align-items: center; gap: 14px; flex-wrap: wrap; font-size: clamp(1.1rem, 2vw, 1.45rem); font-weight: 700; }
+.verdict .pill { --c: #888; background: var(--c); color: #fff; border-radius: 999px; padding: 8px 18px; font-weight: 800; box-shadow: 0 0 30px color-mix(in srgb, var(--c) 45%, transparent); }
+.verdict .pill small { font-weight: 600; opacity: .85; margin-right: 6px; }
 .reveal-grid { display: grid; grid-template-columns: 1.2fr 1fr; gap: 24px; }
 @media (max-width: 860px) { .reveal-grid { grid-template-columns: 1fr; } }
 .bars { display: grid; gap: 10px; align-content: start; }
@@ -125,36 +128,38 @@ input:focus, textarea:focus { outline: none; border-color: var(--cyan); }
 .barrow .fill { height: 100%; border-radius: 10px; width: 0; transition: width 1s cubic-bezier(.2, .9, .3, 1); }
 .barrow.lose { opacity: .4; }
 .barrow.win .label::after { content: " ✔"; color: var(--green); }
-.board { display: grid; gap: 8px; align-content: start; }
-.board-title { font-family: Bungee, sans-serif; color: var(--muted); font-size: .9rem; }
-.answer-hero { width: min(100%, 900px); margin: 0 auto; border-radius: 22px; padding: 16px 24px; display: grid; justify-items: center; gap: 2px; text-align: center; box-shadow: 0 0 0 4px #fff, 0 0 50px #3ef08a99; }
-.answer-hero .lbl { font-weight: 800; text-transform: uppercase; letter-spacing: .14em; font-size: .9rem; opacity: .9; }
-.answer-hero .txt { font-family: Bungee, sans-serif; font-size: clamp(1.6rem, 4.4vw, 3rem); line-height: 1.1; }
-.headline { font-size: clamp(1.1rem, 2.4vw, 1.7rem) !important; }
+.board { background: var(--surface); border: 1px solid var(--border); border-radius: 18px; padding: 10px; display: grid; align-content: start; }
+.board-title { color: var(--muted); font-weight: 700; font-size: .8rem; text-transform: uppercase; letter-spacing: .12em; padding: 6px 10px 8px; }
+
+
+
+
 .rtiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr)); gap: 12px; align-content: start; }
 .rtiles.four { grid-template-columns: 1fr 1fr; }
-.rtile { border-radius: 16px; padding: 14px 16px; display: grid; gap: 10px; font-weight: 800; align-content: start; transition: filter .3s; }
-.rtile.lose { filter: saturate(.3) brightness(.5); }
-.rtile.win { box-shadow: 0 0 0 3px #fff, 0 0 26px #3ef08a88; }
-.rt-top { display: flex; align-items: center; gap: 10px; font-size: 1.25rem; }
+.rtile { --c: #888; background: var(--surface); border: 1px solid var(--border); border-radius: 18px; padding: 16px 18px; display: grid; gap: 12px; align-content: start; transition: opacity .3s; position: relative; }
+.rtile.lose { opacity: .4; }
+.rtile.win { background: color-mix(in srgb, var(--c) 22%, var(--surface)); border: 2px solid var(--c); box-shadow: 0 0 34px color-mix(in srgb, var(--c) 35%, transparent); }
+.rtile.win::after { content: "✔"; position: absolute; top: -12px; right: -12px; width: 34px; height: 34px; border-radius: 50%; background: var(--green); color: #0b2a1a; display: grid; place-items: center; font-weight: 900; box-shadow: 0 0 0 4px var(--bg); }
+.rt-top { display: flex; align-items: center; gap: 14px; font-size: 1.2rem; font-weight: 700; }
 .rt-text { flex: 1; }
-.rt-count { font-family: Bungee, sans-serif; background: #0005; border-radius: 999px; padding: 2px 12px; }
-.rt-who { display: flex; flex-wrap: wrap; gap: 6px; min-height: 30px; }
-.rt-who span { display: inline-flex; align-items: center; gap: 4px; background: #0004; border-radius: 999px; padding: 2px 10px 2px 4px; font-size: 1.2rem; }
-.rt-who small { font-size: .8rem; }
-.rt-who .rt-none { background: none; font-size: .85rem; opacity: .7; }
+.rt-count { font-weight: 800; font-size: 1.5rem; font-variant-numeric: tabular-nums; color: var(--muted); } .rtile.win .rt-count { color: var(--ink); }
+.rt-who { display: flex; flex-wrap: wrap; gap: 6px; min-height: 30px; padding-left: 60px; }
+.rt-who span { display: inline-flex; align-items: center; gap: 5px; background: #ffffff10; border-radius: 999px; padding: 3px 10px 3px 5px; font-size: 1.1rem; }
+.rt-who small { font-size: .82rem; font-weight: 600; }
+.rt-who .rt-none { background: none; font-size: .85rem; color: var(--muted); padding-left: 0; }
 .brow .nt { display: block; font-size: .78rem; color: var(--muted); font-weight: 600; }
-.brow .delta { padding: 3px 10px; border-radius: 999px; font-family: Bungee, sans-serif; font-size: .85rem; }
+.brow .delta { padding: 2px 8px; border-radius: 999px; font-size: .8rem; font-weight: 800; font-variant-numeric: tabular-nums; }
 .brow .delta.up { background: #3ef08a22; }
 .brow .delta.down { background: #ff4d6d22; }
-.brow .delta.zero { color: var(--muted); }
-.brow { display: grid; grid-template-columns: 34px 40px 1fr auto auto; align-items: center; gap: 8px; background: var(--panel); border: 2px solid var(--line); border-radius: 14px; padding: 8px 12px; font-weight: 800; }
-.brow .rk { font-family: Bungee, sans-serif; color: var(--muted); }
+.brow .delta.zero { visibility: hidden; }
+.brow { display: grid; grid-template-columns: 36px 40px 1fr auto auto; align-items: center; gap: 10px; padding: 10px; font-weight: 700; border-radius: 12px; }
+.brow + .brow { border-top: 1px solid var(--border); border-radius: 0; }
+.brow .rk { color: var(--muted); font-weight: 800; text-align: center; font-size: 1.05rem; }
 .brow .av { font-size: 1.6rem; }
 .brow .nm { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.brow .delta { font-size: .9rem; }
+
 .up { color: var(--green); } .down { color: var(--red); }
-.brow .sc { font-family: Bungee, sans-serif; min-width: 70px; text-align: right; }
+.brow .sc { font-weight: 800; font-size: 1.25rem; min-width: 64px; text-align: right; font-variant-numeric: tabular-nums; }
 
 .end { align-items: center; text-align: center; }
 #confetti { position: fixed; inset: 0; pointer-events: none; z-index: 5; }
@@ -226,7 +231,10 @@ body.playing.locked .tile { cursor: default; transform: none; filter: saturate(.
 #mybar .answer { min-height: 48px; padding: 10px 16px; font-size: 1rem; }
 #mybar .power { padding: 8px 12px; }
 #mybar .frz { background: var(--cyan); color: #0b2a3a; border-radius: 12px; padding: 10px 16px; font-weight: 800; }
-#cpbtn { position: fixed; left: 16px; bottom: 16px; z-index: 11; display: none; }
+#cpbtn { position: fixed; left: 72px; bottom: 16px; z-index: 11; display: none; }
+#mutebtn { position: fixed; left: 16px; bottom: 16px; z-index: 11; display: none; width: 46px; padding: 10px 0; }
+body.is-host #mutebtn { display: block; }
+body.playing #mutebtn, body.playing #cpbtn { bottom: 96px; }
 body.gm-host #cpbtn { display: block; }
 .panel { max-width: 760px; margin: 0 auto; padding: 20px 16px 60px; display: grid; gap: 16px; }
 .panel h1 { margin: 0; font-size: 1.4rem; }
@@ -270,6 +278,7 @@ body.gm-host #cpbtn { display: block; }
 <div id="conn">reconnecting…</div>
 <div id="mybar"></div>
 <button class="ghost" id="cpbtn">🎛️ Control panel</button>
+<button class="ghost" id="mutebtn" title="Sound on/off"></button>
 <script>
 const DEFAULT_QUESTIONS = `# "? question" then options, * marks the right one (2-4 options)
 # "vote: prompt" = everyone votes for a teammate. Majority wins points.
@@ -396,8 +405,10 @@ function unlockAudio() {
   audio?.resume?.();
 }
 document.addEventListener("pointerdown", () => role === "host" && unlockAudio());
+let muted = store.get("rr-mute") === "1";
+const canPlay = () => audio && role === "host" && !muted;
 function beep(freq, dur = 0.12, type = "square", vol = 0.05, when = 0) {
-  if (!audio || role !== "host") return;
+  if (!canPlay()) return;
   const t = audio.currentTime + when, o = audio.createOscillator(), g = audio.createGain();
   o.type = type; o.frequency.setValueAtTime(freq, t);
   g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
@@ -407,11 +418,64 @@ const sfx = {
   join: () => { beep(660, 0.08, "triangle", 0.08); beep(990, 0.1, "triangle", 0.08, 0.07); },
   click: () => beep(1400, 0.03, "triangle", 0.05),
   mod: () => [523, 659, 784, 1047].forEach((f, i) => beep(f, 0.18, "square", 0.05, i * 0.09)),
-  tick: () => beep(880, 0.05, "square", 0.04),
   reveal: () => [392, 523, 659, 784].forEach((f, i) => beep(f, 0.4, "sawtooth", 0.03, i * 0.04)),
   ice: () => [2000, 1600, 2400].forEach((f, i) => beep(f, 0.08, "sine", 0.06, i * 0.05)),
   fanfare: () => [523, 523, 523, 659, 784, 659, 784, 1047].forEach((f, i) => beep(f, 0.22, "square", 0.05, i * 0.14)),
 };
+
+// The thinking clock: original woodblock tick-tock with a bass thump, faster and higher in the last 10s.
+function woodblock(freq, vol) {
+  if (!canPlay()) return;
+  const t = audio.currentTime, o = audio.createOscillator(), f = audio.createBiquadFilter(), g = audio.createGain();
+  o.type = "triangle";
+  o.frequency.setValueAtTime(freq, t);
+  o.frequency.exponentialRampToValueAtTime(freq * 0.6, t + 0.05);
+  f.type = "bandpass"; f.frequency.value = freq; f.Q.value = 3;
+  g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.09);
+  o.connect(f).connect(g).connect(audio.destination); o.start(t); o.stop(t + 0.1);
+}
+function thump(vol = 0.18) {
+  if (!canPlay()) return;
+  const t = audio.currentTime, o = audio.createOscillator(), g = audio.createGain();
+  o.type = "sine";
+  o.frequency.setValueAtTime(90, t); o.frequency.exponentialRampToValueAtTime(45, t + 0.18);
+  g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.25);
+  o.connect(g).connect(audio.destination); o.start(t); o.stop(t + 0.3);
+}
+function buzzer() {
+  if (!canPlay()) return;
+  const t = audio.currentTime, f = audio.createBiquadFilter(), g = audio.createGain();
+  f.type = "lowpass"; f.frequency.value = 1100;
+  g.gain.setValueAtTime(0.14, t); g.gain.setValueAtTime(0.14, t + 0.55); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.95);
+  f.connect(g).connect(audio.destination);
+  for (const d of [0, 7]) {
+    const o = audio.createOscillator();
+    o.type = "sawtooth";
+    o.frequency.setValueAtTime(150 + d, t); o.frequency.exponentialRampToValueAtTime(62 + d, t + 0.9);
+    o.connect(f); o.start(t); o.stop(t + 1);
+  }
+}
+let clockKey = "", clockBeat = 0, buzzedFor = -1;
+function clockFrame(left) {
+  if (left <= 0) {
+    if (buzzedFor !== state.qi) { buzzedFor = state.qi; buzzer(); }
+    return;
+  }
+  const elapsed = state.duration - left;
+  const final = left <= 10000;
+  const key = final ? `f${Math.floor((10000 - left) / 500)}` : `n${Math.floor(elapsed / 1000)}`;
+  if (key === clockKey) return;
+  clockKey = key;
+  const tick = clockBeat++ % 2 === 0;
+  if (final) {
+    const rise = (10000 - left) / 10000; // 0 → 1 over the last 10s
+    woodblock((tick ? 1500 : 1150) * (1 + rise * 0.6), 0.16 + rise * 0.08);
+    if (tick) thump(0.14 + rise * 0.1);
+  } else {
+    woodblock(tick ? 1500 : 1150, 0.13);
+    if (tick) thump();
+  }
+}
 
 /* ---------- fx ---------- */
 function toast(text) {
@@ -548,6 +612,7 @@ function render() {
   if (role === "panel") renderPanel();
   else if (state.role === "host") renderHost(fresh);
   else renderPlayer(fresh);
+  document.body.classList.toggle("is-host", role === "host");
   if (role === "host") {
     document.body.classList.toggle("gm-host", state.mode === "gm" && state.phase !== "lobby");
     renderMine();
@@ -586,8 +651,10 @@ function spinWheel(s) {
 }
 
 const tileStyle = (i) => `background:${COLORS[i % COLORS.length]}`;
-const modBadge = (m) => `<span class="modbadge" style="background:${m.color}">${m.emoji} ${esc(m.label)} — ${esc(m.desc)}</span>`;
-const qcount = (s) => `<span class="qcount">Q ${s.qi + 1} / ${s.total}</span>`;
+const colorVar = (i) => `--c:${COLORS[i % COLORS.length]}`;
+const shapeChip = (i) => `<span class="shape-chip">${SHAPES[i % SHAPES.length]}</span>`;
+const modBadge = (m) => `<span class="modbadge" style="--c:${m.color}">${m.emoji} <b>${esc(m.label)}</b> <span>· ${esc(m.desc)}</span></span>`;
+const qcount = (s) => `<span class="qcount"><b>Question ${s.qi + 1}</b> of ${s.total}</span>`;
 
 function renderHost(fresh) {
   const s = state;
@@ -700,7 +767,7 @@ function renderHost(fresh) {
           <h1 class="qtext pop">${esc(s.q.text)}</h1>
           <div class="timer"><div class="timer-fill"></div><span class="timer-num"></span></div>
           <div class="tiles ${s.q.options.length <= 4 ? "four" : ""}">
-            ${s.q.options.map((o, i) => `<div class="tile pop" data-i="${i}" style="${tileStyle(i)}"><span class="shape">${SHAPES[i % SHAPES.length]}</span>${esc(o)}</div>`).join("")}
+            ${s.q.options.map((o, i) => `<div class="tile pop" data-i="${i}" style="${colorVar(i)}">${shapeChip(i)}${esc(o)}</div>`).join("")}
           </div>
           <div class="live" id="live"></div>
           <div class="host-foot"><button class="ghost" id="skip">Reveal now ⏭</button></div>
@@ -727,24 +794,20 @@ function renderHost(fresh) {
     const vote = s.q.kind === "vote";
     const byId = Object.fromEntries(s.players.map((p) => [p.id, p]));
     const pickers = (i) => Object.entries(r.picks).filter(([, a]) => a === i).map(([id]) => byId[id]).filter(Boolean);
-    const hero = r.winners.length
-      ? `<div class="answer-hero pop" style="${tileStyle(r.winners[0])}">
-          <span class="lbl">${vote ? (s.mod.id === "contrarian" ? "🙃 Least picked wins" : "🗳️ The team picked") : "✔ Correct answer"}</span>
-          <span class="txt">${r.winners.map((i) => `${SHAPES[i % SHAPES.length]} ${esc(s.q.options[i])}`).join(" &amp; ")}</span>
-        </div>`
+    const pill = r.winners.length
+      ? `<span class="pill" style="${colorVar(r.winners[0])}"><small>${vote ? (s.mod.id === "contrarian" ? "🙃 Least picked" : "🗳️ Team picked") : "✔ Answer"}</small>${r.winners.map((i) => esc(s.q.options[i])).join(" &amp; ")}</span>`
       : "";
     app.innerHTML = `
       <div class="host">
         <div class="topbar">${qcount(s)}${modBadge(s.mod)}</div>
         <h2 class="qtext small">${esc(s.q.text)}</h2>
-        ${hero}
-        ${vote && r.winners.length ? "" : `<div class="headline pop">${esc(r.headline)}</div>`}
+        <div class="verdict pop">${pill}${vote && r.winners.length ? "" : `<span>${esc(r.headline)}</span>`}</div>
         <div class="reveal-grid">
           <div class="rtiles ${s.q.options.length <= 4 ? "four" : ""}">
             ${s.q.options.map((o, i) => {
               const who = pickers(i);
-              return `<div class="rtile pop ${r.winners.includes(i) ? "win" : "lose"}" style="${tileStyle(i)}">
-                <div class="rt-top"><span class="shape">${SHAPES[i % SHAPES.length]}</span><span class="rt-text">${esc(o)}</span><span class="rt-count">${r.counts[i]}</span></div>
+              return `<div class="rtile pop ${r.winners.includes(i) ? "win" : "lose"}" style="${colorVar(i)}">
+                <div class="rt-top">${shapeChip(i)}<span class="rt-text">${esc(o)}</span><span class="rt-count">${r.counts[i]}</span></div>
                 <div class="rt-who">${who.map((p) => `<span title="${esc(p.name)}">${p.emoji}<small>${esc(p.name)}</small></span>`).join("") || `<span class="rt-none">nobody</span>`}</div>
               </div>`;
             }).join("")}
@@ -756,7 +819,7 @@ function renderHost(fresh) {
               const before = r.rankBefore[p.id], moved = before ? before - p.rank : 0;
               const note = res.note || (r.picks[p.id] == null ? "no answer" : "");
               return `<div class="brow pop">
-                <span class="rk">${p.rank}</span><span class="av">${p.emoji}</span>
+                <span class="rk">${["🥇", "🥈", "🥉"][p.rank - 1] || p.rank}</span><span class="av">${p.emoji}</span>
                 <span class="nm">${esc(p.name)} ${p.streak >= 3 ? "🔥" : ""} ${moved > 0 ? `<span class="up">▲${moved}</span>` : moved < 0 ? `<span class="down">▼${-moved}</span>` : ""}${note ? `<span class="nt">${esc(note)}</span>` : ""}</span>
                 <span class="delta ${res.delta > 0 ? "up" : res.delta < 0 ? "down" : "zero"}">${res.delta > 0 ? "+" : ""}${res.delta}</span>
                 <span class="sc" data-from="${p.score - res.delta}" data-to="${p.score}">${p.score - res.delta}</span>
@@ -937,6 +1000,10 @@ document.addEventListener("click", (e) => {
   if (confirm("Close the room? Everyone gets disconnected and the code stops working.")) sendMsg({ t: "close" });
 });
 
+const drawMute = () => ($("#mutebtn").textContent = muted ? "🔇" : "🔊");
+drawMute();
+$("#mutebtn").onclick = () => { muted = !muted; store.set("rr-mute", muted ? "1" : "0"); drawMute(); unlockAudio(); };
+
 /* ---------- host modes ---------- */
 const lobbyMode = () => (store.get("rr-mode") === "play" ? "play" : "gm");
 
@@ -1069,7 +1136,6 @@ function renderPanel() {
 }
 
 /* ---------- per-frame: timer bar, last-seconds ticks, unfreeze ---------- */
-let lastTick = -1;
 (function loop() {
   if (state && state.phase === "question") {
     const left = Math.max(0, state.deadline - serverNow());
@@ -1080,7 +1146,7 @@ let lastTick = -1;
     });
     const secs = Math.ceil(left / 1000);
     document.querySelectorAll(".timer-num").forEach((el) => (el.textContent = secs));
-    if (role === "host" && secs <= 5 && secs > 0 && secs !== lastTick) { lastTick = secs; sfx.tick(); }
+    if (role === "host") clockFrame(left);
     if (role === "host" && mineState && mineFrozen !== (serverNow() < mineState.me.frozenUntil)) renderMine();
     if (role === "player") {
       const f = state.me.frozenUntil - serverNow();
