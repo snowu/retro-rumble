@@ -88,7 +88,7 @@ const MODS: Record<ModId, { label: string; emoji: string; desc: string; color: s
   speed: { label: "Speed Demon", emoji: "⚡", desc: "Way less time. Go.", color: "#ffd23f" },
   mines: { label: "Minefield", emoji: "💣", desc: "Wrong or no answer: −300", color: "#ff4d4d" },
   heist: { label: "Heist", emoji: "🦹", desc: "Fastest correct answer steals 20% from the leader", color: "#8b5cf6" },
-  scramble: { label: "Scramble", emoji: "🌀", desc: "Every phone's buttons are shuffled. Read!", color: "#2de2e6" },
+  scramble: { label: "Scramble", emoji: "🌀", desc: "Your phone has the answers in a new order. Colours lie, read the words", color: "#2de2e6" },
   jackpot: { label: "Jackpot", emoji: "🎰", desc: "Only the fastest correct answer scores: 2000", color: "#3ef08a" },
   contrarian: { label: "Contrarian", emoji: "🙃", desc: "The LEAST picked answer wins", color: "#ff8a3d" },
   opposite: { label: "Opposite Day", emoji: "🔄", desc: "Wrong answers score. The right one costs you 300.", color: "#5b8cff" },
