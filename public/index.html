@@ -1,0 +1,676 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>Retro Rumble</title>
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#0d0820">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bungee&family=Inter:wght@400;600;800&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<style>
+:root {
+  --bg: #0d0820; --bg2: #1a0f3a; --panel: #1d1340; --line: #3a2a6e;
+  --ink: #f6f1ff; --muted: #a99cc9;
+  --pink: #ff3d9a; --cyan: #2de2e6; --yellow: #ffd23f; --green: #3ef08a; --red: #ff4d6d;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; }
+body {
+  background: radial-gradient(ellipse at top, var(--bg2), var(--bg) 70%) fixed;
+  color: var(--ink); font-family: Inter, system-ui, sans-serif;
+  overflow-x: hidden; touch-action: manipulation; -webkit-tap-highlight-color: transparent;
+}
+body::before { /* synthwave grid floor */
+  content: ""; position: fixed; inset: 55% -50% -10%; z-index: -1; pointer-events: none;
+  background-image: linear-gradient(var(--pink) 1px, transparent 1px), linear-gradient(90deg, var(--pink) 1px, transparent 1px);
+  background-size: 60px 60px; opacity: .13; transform: perspective(300px) rotateX(60deg);
+  animation: grid 4s linear infinite;
+}
+@keyframes grid { to { background-position: 0 60px; } }
+button { font: inherit; color: inherit; cursor: pointer; border: 0; }
+button:disabled { cursor: default; opacity: .35; }
+input, textarea { font: inherit; color: var(--ink); background: #0008; border: 2px solid var(--line); border-radius: 12px; padding: 12px 14px; width: 100%; }
+input:focus, textarea:focus { outline: none; border-color: var(--cyan); }
+.display { font-family: Bungee, Inter, sans-serif; letter-spacing: .02em; }
+.muted { color: var(--muted); }
+.big {
+  font-family: Bungee, sans-serif; font-size: 1.3rem; padding: 16px 28px; border-radius: 16px;
+  background: linear-gradient(135deg, var(--pink), #ff8a3d); box-shadow: 0 6px 0 #a3125c, 0 0 30px #ff3d9a55;
+  transition: transform .08s;
+}
+.big:active { transform: translateY(4px); box-shadow: 0 2px 0 #a3125c; }
+.ghost { background: transparent; border: 2px solid var(--line); border-radius: 12px; padding: 10px 16px; color: var(--muted); }
+.brand {
+  font-family: Bungee, sans-serif; font-size: clamp(2.2rem, 7vw, 5rem); line-height: 1; text-align: center;
+  background: linear-gradient(180deg, var(--yellow), var(--pink) 60%, #8b5cf6); -webkit-background-clip: text; background-clip: text; color: transparent;
+  filter: drop-shadow(0 0 18px #ff3d9a88); margin: 0;
+}
+.fresh .pop { animation: pop .45s cubic-bezier(.2, 1.6, .4, 1) both; }
+.fresh .pop:nth-child(2) { animation-delay: .06s; } .fresh .pop:nth-child(3) { animation-delay: .12s; }
+.fresh .pop:nth-child(4) { animation-delay: .18s; } .fresh .pop:nth-child(5) { animation-delay: .24s; }
+@keyframes pop { from { opacity: 0; transform: scale(.6); } to { opacity: 1; transform: none; } }
+@keyframes wobble { 0%, 100% { transform: rotate(-8deg); } 50% { transform: rotate(8deg); } }
+@keyframes pulse { 50% { transform: scale(1.06); } }
+
+/* landing */
+.landing { max-width: 440px; margin: 0 auto; padding: 48px 16px; display: grid; gap: 22px; }
+.landing .tag { text-align: center; margin-top: -8px; }
+.card { background: var(--panel); border: 2px solid var(--line); border-radius: 20px; padding: 20px; display: grid; gap: 12px; }
+.card h2 { margin: 0; font-family: Bungee, sans-serif; font-size: 1.1rem; color: var(--cyan); }
+#code { text-transform: uppercase; font-family: Bungee, sans-serif; font-size: 1.6rem; letter-spacing: .3em; text-align: center; }
+
+/* host */
+.host { min-height: 100vh; padding: 24px clamp(16px, 4vw, 48px); display: flex; flex-direction: column; gap: 20px; }
+.topbar { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
+.qcount { font-family: Bungee, sans-serif; color: var(--muted); }
+.modbadge { padding: 8px 14px; border-radius: 999px; font-weight: 800; color: #120a26; }
+.lobby-grid { display: grid; grid-template-columns: minmax(260px, 340px) 1fr; gap: 24px; flex: 1; }
+@media (max-width: 760px) { .lobby-grid { grid-template-columns: 1fr; } }
+.joinbox { background: var(--panel); border: 2px solid var(--line); border-radius: 24px; padding: 24px; text-align: center; display: grid; gap: 10px; justify-items: center; align-content: start; }
+.joinbox .url { font-weight: 800; word-break: break-all; }
+.joinbox .roomcode { font-family: Bungee, sans-serif; font-size: 4rem; letter-spacing: .12em; color: var(--yellow); text-shadow: 0 0 24px #ffd23f88; line-height: 1; }
+#qr { background: #fff; padding: 10px; border-radius: 12px; }
+#qr img, #qr canvas { display: block; }
+.roster h2 { font-family: Bungee, sans-serif; margin: 0 0 14px; }
+.bubbles { display: flex; flex-wrap: wrap; gap: 12px; }
+.bubble { background: var(--panel); border: 2px solid var(--line); border-radius: 999px; padding: 8px 18px 8px 10px; font-weight: 800; font-size: 1.15rem; display: flex; align-items: center; gap: 8px; animation: pop .5s cubic-bezier(.2, 1.6, .4, 1) both; }
+.bubble .av { font-size: 1.8rem; animation: wobble 2.4s ease-in-out infinite; display: inline-block; }
+.bubble.off { opacity: .4; }
+.qedit summary { cursor: pointer; color: var(--muted); }
+.qedit textarea { margin-top: 10px; min-height: 260px; font-family: ui-monospace, monospace; font-size: .9rem; }
+.qedit .help { font-size: .85rem; margin-top: 6px; }
+.lobby-actions { display: flex; justify-content: center; }
+
+.wheel-stage { flex: 1; display: grid; place-items: center; gap: 12px; padding-top: 16px; }
+.wheel-wrap { position: relative; width: min(56vh, 86vw); aspect-ratio: 1; }
+.wheel { position: absolute; inset: 0; border-radius: 50%; border: 8px solid #fff2; box-shadow: 0 0 60px #ff3d9a66, inset 0 0 40px #0006; transition: transform 4.2s cubic-bezier(.12, .7, .1, 1); }
+.wheel .seg { position: absolute; inset: 0; }
+.wheel .seg span { position: absolute; left: 50%; top: 8%; transform: translateX(-50%); white-space: nowrap; font-weight: 800; color: #120a26; text-align: center; line-height: 1.1; font-size: clamp(.7rem, 1.7vh, 1rem); }
+.wheel .seg span b { display: block; font-size: 2em; }
+.wheel-wrap .hub { position: absolute; inset: 42%; border-radius: 50%; background: var(--bg); border: 4px solid var(--yellow); display: grid; place-items: center; font-size: 2rem; }
+.pointer { position: absolute; left: 50%; top: -22px; transform: translateX(-50%); font-size: 3rem; color: var(--yellow); filter: drop-shadow(0 0 10px var(--yellow)); z-index: 2; }
+.mod-reveal { text-align: center; min-height: 150px; }
+.mod-reveal .m-emoji { font-size: 3rem; display: block; animation: pulse .6s ease-in-out infinite; }
+.mod-reveal .m-label { font-family: Bungee, sans-serif; font-size: clamp(2rem, 5vw, 3.4rem); }
+.mod-reveal .m-desc { font-size: 1.3rem; color: var(--muted); }
+
+.qtext { font-family: Bungee, sans-serif; font-size: clamp(1.6rem, 4vw, 3rem); text-align: center; margin: 0; line-height: 1.15; text-wrap: balance; }
+.qtext.small { font-size: clamp(1.1rem, 2.4vw, 1.7rem); }
+.timer { position: relative; height: 22px; background: #0006; border-radius: 999px; overflow: hidden; border: 2px solid var(--line); }
+.timer-fill { position: absolute; inset: 0; background: linear-gradient(90deg, var(--green), var(--yellow), var(--red)); background-size: 300% 100%; transform-origin: left; }
+.timer-num { position: absolute; right: 10px; top: 50%; transform: translateY(-50%); font-family: Bungee, sans-serif; font-size: .8rem; }
+.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr)); gap: 14px; }
+.tiles.four { grid-template-columns: repeat(2, 1fr); }
+.tile { border-radius: 18px; padding: 22px; font-size: clamp(1.1rem, 2.4vw, 1.7rem); font-weight: 800; display: flex; align-items: center; gap: 14px; box-shadow: 0 6px 0 #0005; }
+.tile .shape { font-size: 1.6em; opacity: .85; }
+.live { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; min-height: 54px; }
+.live .count { font-family: Bungee, sans-serif; font-size: 1.6rem; }
+.live .in { font-size: 2rem; animation: pop .4s cubic-bezier(.2, 1.6, .4, 1) both; position: relative; }
+.live .in.allin::after { content: "🎲"; position: absolute; font-size: .9rem; right: -6px; bottom: -4px; }
+.host-foot { display: flex; justify-content: flex-end; gap: 12px; margin-top: auto; }
+
+.headline { font-family: Bungee, sans-serif; font-size: clamp(1.4rem, 3.4vw, 2.4rem); text-align: center; color: var(--yellow); text-shadow: 0 0 20px #ffd23f66; }
+.reveal-grid { display: grid; grid-template-columns: 1.2fr 1fr; gap: 24px; }
+@media (max-width: 860px) { .reveal-grid { grid-template-columns: 1fr; } }
+.bars { display: grid; gap: 10px; align-content: start; }
+.barrow { display: grid; grid-template-columns: 1fr auto; gap: 4px 12px; align-items: center; font-weight: 800; }
+.barrow .track { grid-column: 1 / -1; height: 30px; border-radius: 10px; background: #0005; overflow: hidden; }
+.barrow .fill { height: 100%; border-radius: 10px; width: 0; transition: width 1s cubic-bezier(.2, .9, .3, 1); }
+.barrow.lose { opacity: .4; }
+.barrow.win .label::after { content: " ✔"; color: var(--green); }
+.board { display: grid; gap: 8px; align-content: start; }
+.brow { display: grid; grid-template-columns: 34px 40px 1fr auto auto; align-items: center; gap: 8px; background: var(--panel); border: 2px solid var(--line); border-radius: 14px; padding: 8px 12px; font-weight: 800; }
+.brow .rk { font-family: Bungee, sans-serif; color: var(--muted); }
+.brow .av { font-size: 1.6rem; }
+.brow .nm { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.brow .delta { font-size: .9rem; }
+.up { color: var(--green); } .down { color: var(--red); }
+.brow .sc { font-family: Bungee, sans-serif; min-width: 70px; text-align: right; }
+
+.end { align-items: center; text-align: center; }
+#confetti { position: fixed; inset: 0; pointer-events: none; z-index: 5; }
+.podium { display: flex; align-items: flex-end; justify-content: center; gap: 14px; margin-top: 20px; }
+.podium .col { width: min(200px, 28vw); display: grid; gap: 8px; justify-items: center; }
+.podium .av { font-size: 3.6rem; animation: wobble 1.6s ease-in-out infinite; display: inline-block; }
+.podium .nm { font-weight: 800; font-size: 1.2rem; }
+.podium .block { width: 100%; border-radius: 14px 14px 0 0; display: grid; place-items: start center; padding-top: 12px; font-family: Bungee, sans-serif; font-size: 2rem; color: #120a26; animation: rise .9s cubic-bezier(.2, 1.2, .4, 1) both; transform-origin: bottom; }
+@keyframes rise { from { transform: scaleY(0); } }
+.podium .p1 .block { height: 220px; background: var(--yellow); animation-delay: 1s; }
+.podium .p2 .block { height: 160px; background: #d9e1ff; animation-delay: .5s; }
+.podium .p3 .block { height: 110px; background: #ff9f5a; }
+.rest { color: var(--muted); }
+
+/* floating reactions + toasts */
+.float { position: fixed; bottom: -60px; font-size: 3rem; pointer-events: none; z-index: 10; animation: floatup 2.6s ease-out forwards; }
+@keyframes floatup { to { transform: translateY(-85vh) rotate(var(--r)); opacity: 0; } }
+#toasts { position: fixed; bottom: 84px; left: 50%; transform: translateX(-50%); display: grid; gap: 8px; z-index: 20; width: min(92vw, 520px); }
+.toast { background: #120a26ee; border: 2px solid var(--cyan); border-radius: 14px; padding: 12px 16px; font-weight: 800; text-align: center; animation: pop .35s cubic-bezier(.2, 1.6, .4, 1) both; box-shadow: 0 0 24px #2de2e655; }
+#conn { position: fixed; bottom: 12px; left: 50%; transform: translateX(-50%); background: var(--red); color: #fff; padding: 6px 14px; border-radius: 999px; font-weight: 800; z-index: 30; display: none; }
+
+/* player */
+.phone { max-width: 520px; margin: 0 auto; min-height: 100vh; padding: 16px 16px 96px; display: flex; flex-direction: column; gap: 14px; }
+.me { display: flex; align-items: center; gap: 10px; font-weight: 800; }
+.me .av { font-size: 1.8rem; }
+.me .sc { margin-left: auto; font-family: Bungee, sans-serif; color: var(--yellow); }
+.center { flex: 1; display: grid; place-items: center; text-align: center; align-content: center; gap: 12px; }
+.huge { font-size: 5.5rem; line-height: 1; }
+.phone .qtext { font-size: clamp(1.1rem, 5vw, 1.5rem); }
+.answers { display: grid; gap: 10px; }
+.answers.many { grid-template-columns: 1fr 1fr; }
+.answer { border-radius: 16px; padding: 18px 16px; font-size: 1.1rem; font-weight: 800; text-align: left; display: flex; gap: 12px; align-items: center; box-shadow: 0 5px 0 #0006; min-height: 64px; }
+.answer:active { transform: translateY(3px); box-shadow: 0 2px 0 #0006; }
+.powers { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.power { border-radius: 14px; padding: 12px; font-weight: 800; background: var(--panel); border: 2px solid var(--line); }
+.power.on { border-color: var(--yellow); box-shadow: 0 0 18px #ffd23f66; }
+.frozen { position: fixed; inset: 0; z-index: 15; display: grid; place-items: center; text-align: center; align-content: center; gap: 10px; background: #2de2e6cc; color: #0b2a3a; backdrop-filter: blur(6px); font-weight: 800; }
+.frozen .huge { animation: pulse .5s infinite; }
+.frozen .secs { font-family: Bungee, sans-serif; font-size: 3rem; }
+.result-delta { font-family: Bungee, sans-serif; font-size: 3rem; }
+.reacts { position: fixed; bottom: 0; left: 0; right: 0; display: flex; justify-content: center; gap: 4px; padding: 10px 10px calc(10px + env(safe-area-inset-bottom)); background: #0d0820ee; border-top: 2px solid var(--line); z-index: 12; }
+.reacts button { font-size: 1.7rem; background: none; padding: 4px 6px; border-radius: 10px; }
+.reacts button:active { transform: scale(1.4); }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="toasts"></div>
+<div id="conn">reconnecting…</div>
+<script>
+const DEFAULT_QUESTIONS = `# "? question" then options, * marks the right one (2-4 options)
+# "vote: prompt" = everyone votes for a teammate. Majority wins points.
+
+? In what year was Git first released?
+2003
+*2005
+2008
+2010
+
+? The Agile Manifesto was written at a ski resort in which US state?
+Colorado
+*Utah
+Vermont
+Montana
+
+? What does HTTP status 418 mean?
+Payload Too Large
+*I'm a teapot
+Too Early
+Unavailable For Legal Reasons
+
+vote: Who is most likely to push straight to main on a Friday?
+
+? Roughly how long did it take to create the first version of JavaScript?
+*10 days
+3 months
+1 year
+A long weekend
+
+? The first literal computer "bug" found in 1947 was a…
+*Moth
+Cockroach
+Spider
+Fly
+
+? What is 0.1 + 0.2 in JavaScript?
+0.3
+*0.30000000000000004
+0.30000000000000001
+NaN
+
+vote: Who has the most browser tabs open right now?
+
+? Rubber duck debugging was popularised by which book?
+*The Pragmatic Programmer
+Clean Code
+Code Complete
+Refactoring
+
+? Which company originally created Kubernetes?
+Docker
+*Google
+Red Hat
+Microsoft
+
+? Story points usually follow which number sequence?
+Prime numbers
+Powers of two
+*Fibonacci
+Whatever the PO says
+
+vote: Who would survive the longest in a zombie apocalypse?
+
+? What does the "S" in SOLID stand for?
+*Single responsibility
+Separation of concerns
+Stateless design
+Simple interfaces
+
+? How many bytes are in a kibibyte?
+1000
+*1024
+1048
+512
+
+vote: Who is the MVP of this sprint?
+`;
+
+const COLORS = ["#ff3d6e", "#2d8cff", "#ffb020", "#22c55e", "#a855f7", "#14b8a6", "#f97316", "#ec4899", "#84cc16", "#06b6d4"];
+const SHAPES = ["▲", "◆", "●", "■", "★", "✚", "⬟", "♥", "☀", "☾"];
+const REACTIONS = ["🔥", "😂", "👏", "😱", "💀", "🎉", "🤡", "🧠"];
+
+const $ = (s) => document.querySelector(s);
+const app = $("#app");
+const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
+const store = {
+  get(k) { try { return localStorage.getItem(k); } catch { return null; } },
+  set(k, v) { try { localStorage.setItem(k, v); } catch {} },
+};
+const params = new URLSearchParams(location.search);
+// GitHub Pages only serves the page; rooms live on the Cloudflare Worker.
+const API = location.hostname.endsWith("github.io") ? "https://retro-rumble.zancato-t.workers.dev" : location.origin;
+
+let ws = null, role = null, room = null, state = null, offset = 0, lastKey = "", seenPlayers = new Set();
+const serverNow = () => Date.now() + offset;
+
+/* ---------- sound (host only) ---------- */
+let audio = null;
+function unlockAudio() {
+  if (!audio) { try { audio = new (window.AudioContext || window.webkitAudioContext)(); } catch {} }
+  audio?.resume?.();
+}
+document.addEventListener("pointerdown", () => role === "host" && unlockAudio());
+function beep(freq, dur = 0.12, type = "square", vol = 0.05, when = 0) {
+  if (!audio || role !== "host") return;
+  const t = audio.currentTime + when, o = audio.createOscillator(), g = audio.createGain();
+  o.type = type; o.frequency.setValueAtTime(freq, t);
+  g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+  o.connect(g).connect(audio.destination); o.start(t); o.stop(t + dur + 0.02);
+}
+const sfx = {
+  join: () => { beep(660, 0.08, "triangle", 0.08); beep(990, 0.1, "triangle", 0.08, 0.07); },
+  click: () => beep(1400, 0.03, "triangle", 0.05),
+  mod: () => [523, 659, 784, 1047].forEach((f, i) => beep(f, 0.18, "square", 0.05, i * 0.09)),
+  tick: () => beep(880, 0.05, "square", 0.04),
+  reveal: () => [392, 523, 659, 784].forEach((f, i) => beep(f, 0.4, "sawtooth", 0.03, i * 0.04)),
+  ice: () => [2000, 1600, 2400].forEach((f, i) => beep(f, 0.08, "sine", 0.06, i * 0.05)),
+  fanfare: () => [523, 523, 523, 659, 784, 659, 784, 1047].forEach((f, i) => beep(f, 0.22, "square", 0.05, i * 0.14)),
+};
+
+/* ---------- fx ---------- */
+function toast(text) {
+  const el = document.createElement("div");
+  el.className = "toast"; el.textContent = text;
+  $("#toasts").append(el);
+  setTimeout(() => el.remove(), 3200);
+  if (text.includes("🧊")) sfx.ice();
+}
+function floatReact(e) {
+  const el = document.createElement("div");
+  el.className = "float"; el.textContent = e;
+  el.style.left = 5 + Math.random() * 90 + "vw";
+  el.style.setProperty("--r", (Math.random() * 80 - 40) + "deg");
+  document.body.append(el);
+  setTimeout(() => el.remove(), 2700);
+}
+function confetti() {
+  const c = document.createElement("canvas"); c.id = "confetti"; document.body.append(c);
+  const ctx = c.getContext("2d"); c.width = innerWidth; c.height = innerHeight;
+  const bits = Array.from({ length: 220 }, () => ({
+    x: Math.random() * c.width, y: -20 - Math.random() * c.height, vy: 2 + Math.random() * 4, vx: Math.random() * 2 - 1,
+    r: Math.random() * 6, s: 6 + Math.random() * 8, col: COLORS[Math.floor(Math.random() * COLORS.length)],
+  }));
+  const t0 = performance.now();
+  (function frame(t) {
+    ctx.clearRect(0, 0, c.width, c.height);
+    for (const b of bits) {
+      b.y += b.vy; b.x += b.vx + Math.sin((t + b.y) / 300); b.r += 0.1;
+      ctx.save(); ctx.translate(b.x, b.y); ctx.rotate(b.r); ctx.fillStyle = b.col; ctx.fillRect(-b.s / 2, -b.s / 4, b.s, b.s / 2); ctx.restore();
+    }
+    if (t - t0 < 7000) requestAnimationFrame(frame); else c.remove();
+  })(t0);
+}
+function countUp(el, from, to, ms = 1100) {
+  const t0 = performance.now();
+  (function f(t) {
+    const k = Math.min(1, (t - t0) / ms), e = 1 - Math.pow(1 - k, 3);
+    el.textContent = Math.round(from + (to - from) * e);
+    if (k < 1) requestAnimationFrame(f);
+  })(t0);
+}
+
+/* ---------- connection ---------- */
+function connect() {
+  const api = new URL(API);
+  const proto = api.protocol === "https:" ? "wss" : "ws";
+  const q = role === "host"
+    ? `role=host&key=${encodeURIComponent(store.get("rr-host-" + room) || "")}`
+    : `role=player&pid=${encodeURIComponent(myId())}&name=${encodeURIComponent(store.get("rr-name") || "")}`;
+  ws = new WebSocket(`${proto}://${api.host}/ws/${room}?${q}`);
+  ws.onopen = () => { $("#conn").style.display = "none"; };
+  ws.onmessage = (ev) => {
+    const msg = JSON.parse(ev.data);
+    if (msg.t === "state") { offset = msg.now - Date.now(); state = msg; render(); }
+    else if (msg.t === "event") toast(msg.text);
+    else if (msg.t === "react") floatReact(msg.e);
+  };
+  ws.onclose = (ev) => {
+    if (ev.code === 4004 || ev.code === 4003) {
+      toast(ev.code === 4004 ? "That room doesn't exist (anymore)" : "You're not the host of that room");
+      history.replaceState(null, "", location.pathname);
+      role = null; state = null; lastKey = "";
+      return landing();
+    }
+    if (ev.code === 4001) return; // replaced by another tab
+    $("#conn").style.display = "block";
+    setTimeout(connect, 1200);
+  };
+}
+const sendMsg = (m) => ws?.readyState === 1 && ws.send(JSON.stringify(m));
+function myId() {
+  let id = store.get("rr-pid");
+  if (!id) { id = crypto.randomUUID?.() || String(Math.random()).slice(2); store.set("rr-pid", id); }
+  return id;
+}
+
+/* ---------- landing ---------- */
+function landing() {
+  app.className = "";
+  app.innerHTML = `
+    <div class="landing">
+      <h1 class="brand">RETRO<br>RUMBLE</h1>
+      <p class="tag muted">The sprint is over. Settle the score.</p>
+      <form class="card" id="join">
+        <h2>Join a game</h2>
+        <input id="code" maxlength="4" placeholder="CODE" autocomplete="off" value="${esc((params.get("room") || "").toUpperCase())}">
+        <input id="name" maxlength="16" placeholder="Your name" autocomplete="off" value="${esc(store.get("rr-name") || "")}">
+        <button class="big">Jump in ▶</button>
+      </form>
+      <div class="card">
+        <h2>Running the retro?</h2>
+        <p class="muted" style="margin:0">Host on the screen you're sharing. Everyone else plays from their phone.</p>
+        <button class="ghost" id="host">🎡 Host a game</button>
+      </div>
+    </div>`;
+  $("#join").onsubmit = (e) => {
+    e.preventDefault();
+    const code = $("#code").value.trim().toUpperCase(), name = $("#name").value.trim();
+    if (!/^[A-Z]{4}$/.test(code)) return toast("Room codes are 4 letters");
+    if (!name) return toast("Pick a name");
+    store.set("rr-name", name);
+    room = code; role = "player";
+    history.replaceState(null, "", `?room=${code}`);
+    connect();
+  };
+  $("#host").onclick = async () => {
+    unlockAudio();
+    const res = await fetch(`${API}/api/room`, { method: "POST" });
+    if (!res.ok) return toast("Couldn't create a room");
+    const { code, hostKey } = await res.json();
+    store.set("rr-host-" + code, hostKey);
+    room = code; role = "host";
+    history.replaceState(null, "", `?host=${code}`);
+    connect();
+  };
+}
+
+/* ---------- render ---------- */
+function render() {
+  const key = `${state.role}|${state.phase}|${state.qi}`;
+  const fresh = key !== lastKey;
+  lastKey = key;
+  app.className = fresh ? "fresh" : "";
+  if (state.role === "host") renderHost(fresh); else renderPlayer(fresh);
+  if (fresh) setTimeout(() => app.classList.remove("fresh"), 1200);
+}
+
+const tileStyle = (i) => `background:${COLORS[i % COLORS.length]}`;
+const modBadge = (m) => `<span class="modbadge" style="background:${m.color}">${m.emoji} ${esc(m.label)} — ${esc(m.desc)}</span>`;
+const qcount = (s) => `<span class="qcount">Q ${s.qi + 1} / ${s.total}</span>`;
+
+function renderHost(fresh) {
+  const s = state;
+  if (s.phase === "lobby") {
+    if (fresh) {
+      const joinUrl = `${location.origin}${location.pathname}?room=${s.code}`;
+      app.innerHTML = `
+        <div class="host">
+          <h1 class="brand">RETRO RUMBLE</h1>
+          <div class="lobby-grid">
+            <div class="joinbox pop">
+              <div class="muted">Join on your phone</div>
+              <div id="qr"></div>
+              <div class="url">${esc(location.host + location.pathname.replace(/\/$/, ""))}</div>
+              <div class="roomcode">${esc(s.code)}</div>
+            </div>
+            <div class="roster"><h2 id="pcount"></h2><div class="bubbles" id="bubbles"></div></div>
+          </div>
+          <details class="qedit">
+            <summary>✏️ Edit questions (<span id="qn"></span>)</summary>
+            <textarea id="qtext" spellcheck="false"></textarea>
+            <div class="help muted">"? question" then 2–4 options with * on the right one · "vote: who is most likely to…" pits teammates against each other · edits are remembered on this browser</div>
+          </details>
+          <div class="lobby-actions"><button class="big" id="start">Let's rumble ▶</button></div>
+        </div>`;
+      try { new QRCode($("#qr"), { text: joinUrl, width: 190, height: 190, colorDark: "#0d0820", colorLight: "#ffffff" }); } catch { $("#qr").remove(); }
+      const ta = $("#qtext");
+      ta.value = store.get("rr-questions") || DEFAULT_QUESTIONS;
+      const countQs = () => { $("#qn").textContent = ta.value.split("\n").filter((l) => /^\s*(\?|vote:)/i.test(l)).length; };
+      ta.oninput = () => { store.set("rr-questions", ta.value); countQs(); };
+      countQs();
+      $("#start").onclick = () => { unlockAudio(); sendMsg({ t: "start", questions: ta.value }); };
+      seenPlayers = new Set();
+    }
+    const n = s.players.length;
+    $("#pcount").textContent = n ? `${n} player${n > 1 ? "s" : ""} in` : "Waiting for players…";
+    $("#bubbles").innerHTML = s.players.map((p) => `<div class="bubble ${p.connected ? "" : "off"}"><span class="av" style="animation-delay:-${Math.random() * 2}s">${p.emoji}</span>${esc(p.name)}</div>`).join("");
+    if (s.players.some((p) => !seenPlayers.has(p.id))) sfx.join();
+    seenPlayers = new Set(s.players.map((p) => p.id));
+    $("#start").disabled = n === 0;
+    return;
+  }
+
+  if (s.phase === "spin") {
+    if (!fresh) return;
+    const n = s.wheel.length, seg = 360 / n;
+    const grad = s.wheel.map((m, i) => `${m.color} ${i * seg}deg ${(i + 1) * seg}deg`).join(",");
+    app.innerHTML = `
+      <div class="host">
+        <div class="topbar">${qcount(s)}<span class="muted">${s.q.kind === "vote" ? "🗳️ Team vote" : "🧠 Quiz"}</span></div>
+        <div class="wheel-stage">
+          <div class="wheel-wrap">
+            <div class="pointer">▼</div>
+            <div class="wheel" id="wheel" style="background:conic-gradient(${grad})">
+              ${s.wheel.map((m, i) => `<div class="seg" style="transform:rotate(${(i + 0.5) * seg}deg)"><span><b>${m.emoji}</b>${esc(m.label)}</span></div>`).join("")}
+            </div>
+            <div class="hub">🎡</div>
+          </div>
+          <div class="mod-reveal" id="modReveal"></div>
+        </div>
+      </div>`;
+    const target = 360 * 6 + (360 - (s.modIndex + 0.5) * seg) + (Math.random() - 0.5) * seg * 0.6;
+    requestAnimationFrame(() => requestAnimationFrame(() => { $("#wheel").style.transform = `rotate(${target}deg)`; }));
+    const N = 34;
+    for (let k = 0; k < N; k++) setTimeout(sfx.click, 4200 * (1 - Math.cbrt(1 - k / N)));
+    setTimeout(() => {
+      const el = $("#modReveal");
+      if (!el) return;
+      el.innerHTML = `<span class="m-emoji">${s.mod.emoji}</span><div class="m-label" style="color:${s.mod.color}">${esc(s.mod.label)}</div><div class="m-desc">${esc(s.mod.desc)}</div>`;
+      sfx.mod();
+    }, 4300);
+    return;
+  }
+
+  if (s.phase === "question") {
+    if (fresh) {
+      app.innerHTML = `
+        <div class="host">
+          <div class="topbar">${qcount(s)}${modBadge(s.mod)}</div>
+          <h1 class="qtext pop">${esc(s.q.text)}</h1>
+          <div class="timer"><div class="timer-fill"></div><span class="timer-num"></span></div>
+          <div class="tiles ${s.q.options.length <= 4 ? "four" : ""}">
+            ${s.q.options.map((o, i) => `<div class="tile pop" style="${tileStyle(i)}"><span class="shape">${SHAPES[i % SHAPES.length]}</span>${esc(o)}</div>`).join("")}
+          </div>
+          <div class="live" id="live"></div>
+          <div class="host-foot"><button class="ghost" id="skip">Reveal now ⏭</button></div>
+        </div>`;
+      $("#skip").onclick = () => sendMsg({ t: "skip" });
+    }
+    const live = s.players.filter((p) => p.connected);
+    const done = s.players.filter((p) => p.answered);
+    $("#live").innerHTML = `<span class="count">${done.length}/${live.length}</span><span class="muted">locked in</span>` +
+      done.map((p) => `<span class="in ${p.allIn ? "allin" : ""}" title="${esc(p.name)}">${p.emoji}</span>`).join("");
+    return;
+  }
+
+  if (s.phase === "reveal") {
+    if (!fresh) return;
+    const r = s.reveal, max = Math.max(1, ...r.counts);
+    const last = s.qi + 1 >= s.total;
+    app.innerHTML = `
+      <div class="host">
+        <div class="topbar">${qcount(s)}${modBadge(s.mod)}</div>
+        <h2 class="qtext small">${esc(s.q.text)}</h2>
+        <div class="headline pop">${esc(r.headline)}</div>
+        <div class="reveal-grid">
+          <div class="bars">
+            ${s.q.options.map((o, i) => `
+              <div class="barrow ${r.winners.includes(i) ? "win" : "lose"}">
+                <span class="label">${SHAPES[i % SHAPES.length]} ${esc(o)}</span><span>${r.counts[i]}</span>
+                <div class="track"><div class="fill" data-w="${(r.counts[i] / max) * 100}" style="${tileStyle(i)}"></div></div>
+              </div>`).join("")}
+          </div>
+          <div class="board">
+            ${s.players.slice(0, 8).map((p) => {
+              const res = r.results[p.id] || { delta: 0 };
+              const before = r.rankBefore[p.id], moved = before ? before - p.rank : 0;
+              return `<div class="brow pop">
+                <span class="rk">${p.rank}</span><span class="av">${p.emoji}</span>
+                <span class="nm">${esc(p.name)} ${p.streak >= 3 ? "🔥" : ""} ${moved > 0 ? `<span class="up">▲${moved}</span>` : moved < 0 ? `<span class="down">▼${-moved}</span>` : ""}</span>
+                <span class="delta ${res.delta > 0 ? "up" : res.delta < 0 ? "down" : "muted"}">${res.delta > 0 ? "+" : ""}${res.delta || ""}</span>
+                <span class="sc" data-from="${p.score - res.delta}" data-to="${p.score}">${p.score - res.delta}</span>
+              </div>`;
+            }).join("")}
+          </div>
+        </div>
+        <div class="host-foot"><button class="big" id="next">${last ? "Final results 🏆" : "Next ▶"}</button></div>
+      </div>`;
+    sfx.reveal();
+    requestAnimationFrame(() => requestAnimationFrame(() => document.querySelectorAll(".fill").forEach((f) => (f.style.width = f.dataset.w + "%"))));
+    setTimeout(() => document.querySelectorAll(".sc").forEach((el) => countUp(el, +el.dataset.from, +el.dataset.to)), 700);
+    $("#next").onclick = () => sendMsg({ t: "next" });
+    return;
+  }
+
+  if (s.phase === "end") {
+    if (!fresh) return;
+    const [a, b, c] = s.players;
+    const col = (p, cls, n) => p ? `<div class="col ${cls}"><span class="av">${p.emoji}</span><span class="nm">${esc(p.name)}</span><span class="muted">${p.score}</span><div class="block">${n}</div></div>` : "";
+    app.innerHTML = `
+      <div class="host end">
+        <h1 class="brand">CHAMPIONS</h1>
+        <div class="podium">${col(b, "p2", 2)}${col(a, "p1", 1)}${col(c, "p3", 3)}</div>
+        <div class="rest">${s.players.slice(3).map((p) => `${p.rank}. ${p.emoji} ${esc(p.name)} · ${p.score}`).join(" &nbsp;·&nbsp; ")}</div>
+        <button class="big" id="again">Run it back 🔁</button>
+      </div>`;
+    sfx.fanfare();
+    setTimeout(confetti, 1300);
+    $("#again").onclick = () => sendMsg({ t: "again" });
+  }
+}
+
+function renderPlayer(fresh) {
+  const s = state, me = s.me;
+  const head = `<div class="me"><span class="av">${me.emoji}</span>${esc(me.name)}<span class="sc">${me.score}</span></div>`;
+  const reacts = `<div class="reacts">${REACTIONS.map((e) => `<button data-e="${e}">${e}</button>`).join("")}</div>`;
+  let body = "";
+
+  if (s.phase === "lobby") {
+    body = `<div class="center"><div class="huge pop" style="animation:wobble 2s infinite">${me.emoji}</div><h2 class="display pop">You're in!</h2>
+      <p class="muted">Eyes on the shared screen. ${s.playerCount} player${s.playerCount > 1 ? "s" : ""} so far.</p>
+      <p class="muted">🎲 <b>All-in</b> and 🧊 <b>Ice the leader</b> can each be used once per game. Use them wisely. Or don't.</p></div>`;
+  } else if (s.phase === "spin") {
+    body = `<div class="center"><div class="huge" style="animation:wobble .4s infinite">🎡</div><h2 class="display">Spinning…</h2><p class="muted" id="pmod"></p></div>`;
+  } else if (s.phase === "question" && s.q) {
+    const answered = me.answer !== null;
+    const pickedText = answered ? s.q.options.find((o) => o.i === me.answer)?.text : "";
+    body = `
+      ${modBadge(s.mod)}
+      <h2 class="qtext">${esc(s.q.text)}</h2>
+      <div class="timer"><div class="timer-fill"></div><span class="timer-num"></span></div>
+      ${answered
+        ? `<div class="center"><div class="huge">🤞</div><h2 class="display">Locked in</h2><p>${esc(pickedText)}</p>${me.allInActive ? `<p class="up"><b>🎲 ALL-IN</b></p>` : ""}</div>`
+        : `<div class="answers ${s.q.options.length > 4 ? "many" : ""}">
+            ${s.q.options.map((o, pos) => `<button class="answer pop" data-i="${o.i}" style="${tileStyle(s.mod.id === "scramble" ? pos : o.i)}"><span>${SHAPES[(s.mod.id === "scramble" ? pos : o.i) % SHAPES.length]}</span>${esc(o.text)}</button>`).join("")}
+          </div>`}
+      <div class="powers">
+        <button class="power ${me.allInActive ? "on" : ""}" id="allin" ${me.allInUsed || answered ? "disabled" : ""}>🎲 ${me.allInActive ? "ALL-IN!" : "All-in"}<br><small class="muted">2× or −500</small></button>
+        <button class="power" id="ice" ${me.iceUsed ? "disabled" : ""}>🧊 Ice the leader<br><small class="muted">freeze them 5s</small></button>
+      </div>
+      ${serverNow() < me.frozenUntil ? `<div class="frozen"><div class="huge">🧊</div><div>FROZEN by ${esc(me.frozenBy)}</div><div class="secs" id="fsecs"></div></div>` : ""}`;
+  } else if (s.phase === "reveal") {
+    const r = s.result || { delta: 0, correct: null, note: "" };
+    const icon = r.correct === true ? "✅" : r.correct === false ? "❌" : r.delta > 0 ? "🗳️" : "😶";
+    body = `<div class="center">
+      <div class="huge pop">${icon}</div>
+      <div class="result-delta pop ${r.delta > 0 ? "up" : r.delta < 0 ? "down" : "muted"}">${r.delta > 0 ? "+" : ""}${r.delta}</div>
+      ${r.note ? `<p><b>${esc(r.note)}</b></p>` : ""}
+      ${s.winners.length ? `<p class="muted">${s.q?.kind === "vote" ? "Winner" : "Answer"}: <b>${s.winners.map(esc).join(" & ")}</b></p>` : ""}
+      <h2 class="display">#${me.rank} <span class="muted">of ${s.playerCount}</span></h2>
+    </div>`;
+  } else if (s.phase === "end") {
+    const medal = ["🥇", "🥈", "🥉"][me.rank - 1] || "🫡";
+    body = `<div class="center"><div class="huge pop">${medal}</div><h2 class="display">#${me.rank} of ${s.playerCount}</h2><p class="result-delta">${me.score}</p><p class="muted">GG. Now back to the action items.</p></div>`;
+  }
+
+  app.innerHTML = `<div class="phone">${head}${body}</div>${reacts}`;
+  document.querySelectorAll(".answer").forEach((b) => (b.onclick = () => { navigator.vibrate?.(30); sendMsg({ t: "answer", i: +b.dataset.i }); }));
+  document.querySelectorAll(".reacts button").forEach((b) => (b.onclick = () => sendMsg({ t: "react", e: b.dataset.e })));
+  $("#allin") && ($("#allin").onclick = () => sendMsg({ t: "allin" }));
+  $("#ice") && ($("#ice").onclick = () => sendMsg({ t: "ice" }));
+  if ($(".frozen")) navigator.vibrate?.([80, 40, 80]);
+  if (s.phase === "spin" && fresh) {
+    setTimeout(() => { const el = $("#pmod"); if (el) el.innerHTML = `${s.mod.emoji} <b>${esc(s.mod.label)}</b><br>${esc(s.mod.desc)}`; }, 4300);
+  }
+  if (s.phase === "reveal" && fresh) navigator.vibrate?.(s.result?.delta > 0 ? 60 : [40, 60, 40]);
+}
+
+/* ---------- per-frame: timer bar, last-seconds ticks, unfreeze ---------- */
+let lastTick = -1;
+(function loop() {
+  if (state && state.phase === "question") {
+    const left = Math.max(0, state.deadline - serverNow());
+    const k = left / state.duration;
+    document.querySelectorAll(".timer-fill").forEach((el) => {
+      el.style.transform = `scaleX(${k})`;
+      el.style.backgroundPosition = `${k * 100}% 0`;
+    });
+    const secs = Math.ceil(left / 1000);
+    document.querySelectorAll(".timer-num").forEach((el) => (el.textContent = secs));
+    if (role === "host" && secs <= 5 && secs > 0 && secs !== lastTick) { lastTick = secs; sfx.tick(); }
+    if (role === "player") {
+      const f = state.me.frozenUntil - serverNow();
+      const fs = $("#fsecs");
+      if (fs) fs.textContent = Math.max(0, Math.ceil(f / 1000));
+      if ($(".frozen") && f <= 0) render();
+      else if (!$(".frozen") && f > 0) render();
+    }
+  }
+  requestAnimationFrame(loop);
+})();
+
+/* ---------- boot ---------- */
+if (params.get("host") && store.get("rr-host-" + params.get("host").toUpperCase())) {
+  room = params.get("host").toUpperCase(); role = "host"; connect();
+} else if (params.get("room") && store.get("rr-name") && store.get("rr-pid")) {
+  room = params.get("room").toUpperCase(); role = "player"; connect();
+} else {
+  landing();
+}
+</script>
+</body>
+</html>
