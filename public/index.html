@@ -270,6 +270,9 @@ body.gm-host #cpbtn { display: block; }
 .mark { flex: none; width: 34px; height: 34px; border-radius: 50%; background: var(--c); color: #fff; font-weight: 800; opacity: .45; }
 .mark.on { opacity: 1; box-shadow: 0 0 0 3px var(--green); }
 .qtools { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+.otdb select { font: inherit; color: var(--ink); background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 8px 10px; }
+.credit { text-align: center; font-size: .8rem; margin: 0; }
+.credit a { color: var(--muted); }
 .rawtext textarea { min-height: 140px; margin-top: 8px; font-family: ui-monospace, monospace; font-size: .85rem; }
 .reacts { position: fixed; bottom: 0; left: 0; right: 0; display: flex; justify-content: center; gap: 4px; padding: 10px 10px calc(10px + env(safe-area-inset-bottom)); background: #0d0820ee; border-top: 2px solid var(--line); z-index: 12; }
 .reacts button { font-size: 1.7rem; background: none; padding: 4px 6px; border-radius: 10px; }
@@ -683,7 +686,7 @@ function renderHost(fresh) {
             <div class="roster"><h2 id="pcount"></h2><div class="bubbles" id="bubbles"></div></div>
           </div>
           <div class="modes">
-            <button class="modecard" data-mode="play"><b>🎮 Play along</b><span class="muted">You play too, from this screen. Built-in questions, shuffled. No peeking.</span></button>
+            <button class="modecard" data-mode="play"><b>🎮 Play along</b><span class="muted">You play too, from this screen. Fresh trivia every game, a few trick questions and team votes. No peeking.</span></button>
             <button class="modecard" data-mode="gm"><b>🎛️ Game master</b><span class="muted">You run the show: your questions, your rules. Queue questions, skip or end from the control panel.</span></button>
           </div>
           <div class="modeopts" data-for="play">
@@ -694,6 +697,11 @@ function renderHost(fresh) {
             <details class="qedit">
               <summary>✏️ Questions (<span id="qn"></span>)</summary>
               <div id="qeditor"></div>
+              <div class="qtools otdb">
+                <select id="otdbCat">${OTDB_CATS.map(([id, name]) => `<option value="${id}">${name}</option>`).join("")}</select>
+                <select id="otdbDiff"><option value="any">Any difficulty</option><option value="easy">Easy</option><option value="medium">Medium</option><option value="hard">Hard</option></select>
+                <button class="ghost" id="otdbAdd">🌐 Add 10 from Open Trivia DB</button>
+              </div>
               <div class="qtools">
                 <details class="rawtext"><summary class="muted">📋 Paste as text</summary>
                   <textarea id="qtext" spellcheck="false" placeholder="? Question&#10;wrong answer&#10;*right answer&#10;&#10;vote: Who is most likely to…"></textarea>
@@ -705,6 +713,7 @@ function renderHost(fresh) {
             </details>
           </div>
           <div class="lobby-actions"><button class="big" id="start">Let's rumble ▶</button></div>
+          <p class="credit muted">Trivia from <a href="https://opentdb.com" target="_blank" rel="noopener">Open Trivia DB</a>, licensed <a href="https://creativecommons.org/licenses/by-sa/4.0/" target="_blank" rel="noopener">CC BY-SA 4.0</a></p>
         </div>`;
       try { new QRCode($("#qr"), { text: joinUrl, width: 190, height: 190, colorDark: "#0d0820", colorLight: "#ffffff" }); } catch { $("#qr").remove(); }
       let model = null;
@@ -721,6 +730,15 @@ function renderHost(fresh) {
         editor.set([...model, ...add]);
         $("#qtext").value = "";
         toast(`➕ ${add.length} question${add.length > 1 ? "s" : ""} added`);
+      };
+      $("#otdbAdd").onclick = async () => {
+        const btn = $("#otdbAdd");
+        btn.disabled = true; btn.textContent = "🌐 Fetching…";
+        const add = await fetchTrivia(10, $("#otdbCat").value, $("#otdbDiff").value);
+        btn.disabled = false; btn.textContent = "🌐 Add 10 from Open Trivia DB";
+        if (!add.length) return toast("Open Trivia DB didn't answer. Try again in a few seconds, or another category");
+        editor.set([...model, ...add]);
+        toast(`🌐 ${add.length} questions added`);
       };
       $("#qreset").onclick = (e) => { e.preventDefault(); if (confirm("Replace your questions with the default set?")) editor.set(parseQs(DEFAULT_QUESTIONS)); };
       $("#lobbySettings").onchange = () => store.set("rr-settings", JSON.stringify(readSettings($("#lobbySettings"))));
@@ -917,6 +935,18 @@ function renderPlayer(fresh) {
   if (s.phase === "reveal" && fresh) navigator.vibrate?.(s.result?.delta > 0 ? 60 : [40, 60, 40]);
 }
 
+/* ---------- Open Trivia DB (via the Worker) ---------- */
+const OTDB_CATS = [["mix", "🎲 Friendly mix"], ["9", "General Knowledge"], ["17", "Science & Nature"], ["22", "Geography"], ["23", "History"], ["27", "Animals"],
+  ["11", "Film"], ["12", "Music"], ["18", "Computers"], ["21", "Sports"], ["20", "Mythology"], ["10", "Books"], ["25", "Art"], ["28", "Vehicles"],
+  ["14", "Television"], ["15", "Video Games"], ["31", "Anime & Manga"]];
+async function fetchTrivia(amount, category, difficulty) {
+  try {
+    const res = await fetch(`${API}/api/trivia?amount=${amount}&category=${category}&difficulty=${difficulty}`);
+    const qs = res.ok ? await res.json() : [];
+    return qs.map((q) => ({ ...q, options: [...q.options, "", "", "", ""].slice(0, 4) }));
+  } catch { return []; }
+}
+
 /* ---------- question editor ---------- */
 const blankQ = (kind = "quiz") => ({ kind, text: "", options: ["", "", "", ""], correct: 0 });
 const qValid = (q) => !!q.text.trim() && (q.kind === "vote" || (q.options.filter((o) => o.trim()).length >= 2 && !!q.options[q.correct]?.trim()));
@@ -1099,12 +1129,20 @@ function renderPanel() {
         <section class="card"><h2>Settings</h2><div id="psettings">${settingsHTML(s.settings, s.allMods)}</div><small class="muted">Changes apply from the next question.</small></section>
         <section class="card"><h2>Up next (<span id="pqn"></span>)</h2><div id="pqueue"></div>
           <div id="padd"></div>
-          <button class="big" id="paddbtn">➕ Add to queue</button>
+          <div class="row"><button class="big" id="paddbtn">➕ Add to queue</button><button class="ghost" id="potdb">🌐 Add 5 random trivia</button></div>
         </section>
       </div>`;
     $("#psettings").onchange = () => sendMsg({ t: "settings", settings: readSettings($("#psettings")) });
     const draft = [blankQ()];
     const addEditor = mountEditor($("#padd"), draft, () => {});
+    $("#potdb").onclick = async () => {
+      const btn = $("#potdb");
+      btn.disabled = true;
+      const qs = await fetchTrivia(5, "mix", "any");
+      btn.disabled = false;
+      if (!qs.length) return toast("Open Trivia DB didn't answer. Try again in a few seconds");
+      sendMsg({ t: "queueAdd", questions: serializeQs(qs) });
+    };
     $("#paddbtn").onclick = () => {
       if (!draft.some(qValid)) return toast("Finish the question first (text, 2+ answers, a ✔)");
       sendMsg({ t: "queueAdd", questions: serializeQs(draft) });
@@ -1139,7 +1177,7 @@ function renderPanel() {
     ? s.queue.map((q) => `<div class="qrow"><div>${q.kind === "vote" ? "🗳️" : "🧠"} ${esc(q.text)}${q.kind === "quiz" ? `<br><small>✔ ${esc(q.options[q.correct])}</small>` : ""}</div><button class="ghost" data-rm="${q.i}">✕</button></div>`).join("")
     : `<p class="muted">${s.phase === "lobby" ? "Questions are set in the lobby on the main screen." : "Nothing queued. Add some below, or the game ends after this one."}</p>`;
   $("#pqueue").querySelectorAll("[data-rm]").forEach((b) => (b.onclick = () => sendMsg({ t: "queueRemove", i: +b.dataset.rm })));
-  $("#paddbtn").disabled = s.phase === "lobby" || s.phase === "end";
+  $("#paddbtn").disabled = $("#potdb").disabled = s.phase === "lobby" || s.phase === "end";
 }
 
 /* ---------- per-frame: timer bar, last-seconds ticks, unfreeze ---------- */

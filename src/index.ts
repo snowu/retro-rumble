@@ -123,7 +123,64 @@ function parseQuestions(text: string): Question[] {
       cur.options.push((right ? line.slice(1) : line).trim().slice(0, 80));
     }
   }
-  return out.slice(0, 60);
+  return out.slice(0, 200);
+}
+
+// Open Trivia DB (opentdb.com, CC BY-SA 4.0): free, no key, 50 per request, ~1 request per 5s per IP.
+interface OtdbItem {
+  difficulty: string;
+  category: string;
+  question: string;
+  correct_answer: string;
+  incorrect_answers: string[];
+}
+const OTDB_SKIP = /Anime|Video Games|Cartoon|Comics|Board Games|Musicals|Television/;
+const DIFFICULTIES = ["any", "easy", "medium", "hard"];
+
+// "mix" pulls a big batch and keeps the friendlier categories, easy and medium first.
+async function fetchTrivia(amount: number, category = "mix", difficulty = "any"): Promise<Question[]> {
+  const mix = category === "mix";
+  const url = new URL("https://opentdb.com/api.php");
+  url.searchParams.set("amount", String(mix ? 50 : Math.min(amount, 50)));
+  url.searchParams.set("type", "multiple");
+  url.searchParams.set("encode", "url3986");
+  if (!mix) url.searchParams.set("category", category);
+  if (difficulty !== "any") url.searchParams.set("difficulty", difficulty);
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const res = await fetch(url.toString()).catch(() => null);
+    const data = res?.ok ? await res.json<{ response_code: number; results: OtdbItem[] }>().catch(() => null) : null;
+    if (data?.response_code === 5 && attempt === 0) {
+      await new Promise((r) => setTimeout(r, 5200)); // rate limited, try once more
+      continue;
+    }
+    if (!data || data.response_code !== 0) return [];
+    const d = (x: string) => decodeURIComponent(x).trim();
+    let items = data.results;
+    if (mix) {
+      items = items.filter((it) => !OTDB_SKIP.test(d(it.category)));
+      items.sort((a, b) => Number(a.difficulty === "hard") - Number(b.difficulty === "hard"));
+    }
+    return items.slice(0, amount).map((it): Question => {
+      const right = d(it.correct_answer).slice(0, 80);
+      const options = shuffle([right, ...it.incorrect_answers.map((o) => d(o).slice(0, 80))]);
+      return { kind: "quiz", text: d(it.question).slice(0, 200), options, correct: options.indexOf(right) };
+    });
+  }
+  return [];
+}
+
+// Play along: fresh trivia plus a few built-in trick questions, a team vote every 4th round.
+function playSet(builtin: Question[], trivia: Question[], asked: Set<string>): Question[] {
+  const fresh = (qs: Question[]) => (qs.filter((q) => !asked.has(q.text)).length >= 4 ? qs.filter((q) => !asked.has(q.text)) : qs);
+  const votes = shuffle(builtin.filter((q) => q.kind === "vote")).slice(0, 4);
+  const classics = shuffle(fresh(builtin.filter((q) => q.kind === "quiz")));
+  const quiz = trivia.length >= 8 ? shuffle([...trivia.slice(0, 12), ...classics.slice(0, 4)]) : classics;
+  const out: Question[] = [];
+  quiz.forEach((q, i) => {
+    out.push(q);
+    if (i % 4 === 3 && votes.length) out.push(votes.shift()!);
+  });
+  return [...out, ...votes];
 }
 
 export default {
@@ -136,6 +193,13 @@ export default {
         if (res.ok) return new Response(res.body, { headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" } });
       }
       return new Response("no free room codes", { status: 503 });
+    }
+    if (url.pathname === "/api/trivia") {
+      const amount = Math.min(20, Math.max(1, Number(url.searchParams.get("amount")) || 10));
+      const category = /^(\d+|mix)$/.test(url.searchParams.get("category") ?? "") ? url.searchParams.get("category")! : "mix";
+      const difficulty = DIFFICULTIES.includes(url.searchParams.get("difficulty") ?? "") ? url.searchParams.get("difficulty")! : "any";
+      const qs = await fetchTrivia(amount, category, difficulty);
+      return Response.json(qs, { headers: { "Access-Control-Allow-Origin": "*" } });
     }
     const m = url.pathname.match(/^\/ws\/([A-Z]{4})$/);
     if (m) {
@@ -167,6 +231,8 @@ export class Room extends DurableObject<Env> {
   qDuration = DEFAULT_SETTINGS.seconds * 1000;
   timer: ReturnType<typeof setTimeout> | null = null;
   reveal: Reveal | null = null;
+  starting = false;
+  asked = new Set<string>(); // question texts already played in this room, so reruns stay fresh
 
   async fetch(req: Request): Promise<Response> {
     const url = new URL(req.url);
@@ -235,15 +301,25 @@ export class Room extends DurableObject<Env> {
     try { return JSON.parse(data); } catch { return null; }
   }
 
-  private onHost(data: unknown) {
+  private async onHost(data: unknown) {
     const msg = this.parse(data);
     if (!msg) return;
-    if (msg.t === "start" && this.phase === "lobby") {
+    if (msg.t === "start" && this.phase === "lobby" && !this.starting) {
       const qs = parseQuestions(String(msg.questions ?? ""));
       if (!qs.length) return this.toHosts({ t: "event", text: "No valid questions found — check the format" });
       this.mode = msg.mode === "play" ? "play" : "gm";
       this.settings = this.mode === "gm" ? cleanSettings(msg.settings, this.settings) : DEFAULT_SETTINGS;
-      this.questions = this.mode === "play" ? shuffle(qs) : qs;
+      if (this.mode === "play") {
+        this.starting = true;
+        this.toHosts({ t: "event", text: "🌐 Fetching fresh trivia…" });
+        const trivia = (await fetchTrivia(16)).filter((q) => !this.asked.has(q.text));
+        this.starting = false;
+        if (!this.created || this.phase !== "lobby") return; // closed while we waited
+        if (trivia.length < 8) this.toHosts({ t: "event", text: "Open Trivia DB didn't answer, using the built-in questions" });
+        this.questions = playSet(qs, trivia, this.asked);
+      } else {
+        this.questions = qs;
+      }
       this.qi = -1;
       this.nextQuestion();
     } else if (msg.t === "skip" && this.phase === "question") {
@@ -273,7 +349,7 @@ export class Room extends DurableObject<Env> {
       // Forget everything; the code can be handed out again once the object is idle.
       this.clearTimer();
       const sockets = [...this.hosts, ...[...this.players.values()].map((p) => p.ws)];
-      Object.assign(this, { created: false, phase: "lobby", questions: [], qi: -1, cur: null, reveal: null });
+      Object.assign(this, { created: false, phase: "lobby", questions: [], qi: -1, cur: null, reveal: null, asked: new Set() });
       this.players.clear();
       this.hosts.clear();
       for (const ws of sockets) try { ws?.close(4005, "room closed"); } catch {}
@@ -337,6 +413,7 @@ export class Room extends DurableObject<Env> {
       return this.broadcast();
     }
     const q = this.questions[this.qi];
+    this.asked.add(q.text);
     if (q.kind === "vote") {
       const names = [...this.players.values()].map((p) => `${p.emoji} ${p.name}`);
       if (names.length < 2) return this.nextQuestion();

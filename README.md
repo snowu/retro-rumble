@@ -11,7 +11,7 @@ Chaotic multiplayer quiz for sprint retros. One person hosts on the shared scree
 
 Two host modes, picked in the lobby:
 
-- 🎮 **Play along**: the host plays too, with answer buttons on the host screen. Built-in questions, shuffled.
+- 🎮 **Play along**: the host plays too, by clicking the answer cards. Every game pulls fresh trivia, adds a few built-in trick questions and team votes.
 - 🎛️ **Game master**: the host doesn't answer but controls everything: questions, answer time, which wheel modifiers are on, power-ups. During the game a **Control panel** (separate window, so answers never hit the shared screen) can queue or remove questions, change settings, reveal early, skip or end the game.
 
 Game master questions are written in the lobby:
@@ -36,3 +36,7 @@ npm run deploy   # deploy the Worker
 ```
 
 The GitHub Pages build points at `https://retro-rumble.zancato-t.workers.dev` (see `API` in `public/index.html`).
+
+## Credits
+
+Trivia questions come from [Open Trivia DB](https://opentdb.com), licensed [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/). The Worker fetches them at `/api/trivia`; Play along falls back to the built-in questions if the API is unavailable.
