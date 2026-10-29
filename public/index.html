@@ -20,6 +20,7 @@
 }
 * { box-sizing: border-box; }
 html, body { margin: 0; height: 100%; }
+html { background: var(--bg); }
 body {
   background: radial-gradient(ellipse at top, var(--bg2), var(--bg) 70%) fixed;
   color: var(--ink); font-family: Inter, system-ui, sans-serif;
@@ -195,6 +196,9 @@ input[type="checkbox"] { width: auto; accent-color: var(--yellow); margin: 0 4px
 body.playing #mybar { display: flex; }
 body.playing .host { padding-bottom: 130px; }
 body.playing #toasts { bottom: 140px; }
+body.playing .tile { cursor: pointer; transition: transform .1s, filter .1s; }
+body.playing .tile:hover { transform: translateY(-3px); filter: brightness(1.12); }
+body.playing.locked .tile { cursor: default; transform: none; filter: saturate(.6); }
 #mybar .who { font-weight: 800; color: var(--yellow); }
 #mybar .answer { min-height: 48px; padding: 10px 16px; font-size: 1rem; }
 #mybar .power { padding: 8px 12px; }
@@ -209,6 +213,29 @@ body.gm-host #cpbtn { display: block; }
 .qrow { display: grid; grid-template-columns: 1fr auto; gap: 10px; align-items: center; border-top: 1px solid var(--line); padding: 8px 0; }
 .qrow small { color: var(--green); }
 #padd { min-height: 120px; font-family: ui-monospace, monospace; font-size: .9rem; }
+/* question editor */
+.qlist { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 360px), 1fr)); gap: 12px; margin: 10px 0; }
+.qcard { background: var(--panel); border: 2px solid var(--line); border-radius: 16px; padding: 12px; display: grid; gap: 8px; align-content: start; }
+.qcard.bad { border-color: var(--red); }
+.qcard .bad-msg { display: none; color: var(--red); font-size: .8rem; }
+.qcard.bad .bad-msg { display: block; }
+.qhead { display: flex; align-items: center; gap: 6px; }
+.qnum { font-family: Bungee, sans-serif; color: var(--muted); min-width: 26px; }
+.grow { flex: 1; }
+.seg2 { display: flex; background: #0006; border-radius: 10px; padding: 2px; }
+.seg2 button { background: none; padding: 4px 10px; border-radius: 8px; font-weight: 600; font-size: .85rem; color: var(--muted); }
+.seg2 button.on { background: var(--line); color: var(--ink); }
+.icon { background: none; width: 30px; height: 30px; border-radius: 8px; color: var(--muted); }
+.icon:hover { background: var(--line); color: var(--ink); }
+.qcard input { padding: 8px 10px; border-radius: 10px; }
+.opts { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+@media (max-width: 480px) { .opts { grid-template-columns: 1fr; } }
+.optrow { display: flex; gap: 6px; align-items: center; }
+.optrow input { flex: 1; min-width: 0; }
+.mark { flex: none; width: 34px; height: 34px; border-radius: 50%; background: var(--c); color: #fff; font-weight: 800; opacity: .45; }
+.mark.on { opacity: 1; box-shadow: 0 0 0 3px var(--green); }
+.qtools { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+.rawtext textarea { min-height: 140px; margin-top: 8px; font-family: ui-monospace, monospace; font-size: .85rem; }
 .reacts { position: fixed; bottom: 0; left: 0; right: 0; display: flex; justify-content: center; gap: 4px; padding: 10px 10px calc(10px + env(safe-area-inset-bottom)); background: #0d0820ee; border-top: 2px solid var(--line); z-index: 12; }
 .reacts button { font-size: 1.7rem; background: none; padding: 4px 6px; border-radius: 10px; }
 .reacts button:active { transform: scale(1.4); }
@@ -564,20 +591,37 @@ function renderHost(fresh) {
           <div class="modeopts" data-for="gm">
             <div id="lobbySettings">${settingsHTML(settings, s.allMods)}</div>
             <details class="qedit">
-              <summary>✏️ Edit questions (<span id="qn"></span>)</summary>
-              <textarea id="qtext" spellcheck="false"></textarea>
-              <div class="help muted">"? question" then 2–4 options with * on the right one · "vote: who is most likely to…" pits teammates against each other · edits are remembered on this browser · <a href="#" id="qreset" style="color:var(--cyan)">reset to defaults</a></div>
+              <summary>✏️ Questions (<span id="qn"></span>)</summary>
+              <div id="qeditor"></div>
+              <div class="qtools">
+                <details class="rawtext"><summary class="muted">📋 Paste as text</summary>
+                  <textarea id="qtext" spellcheck="false" placeholder="? Question&#10;wrong answer&#10;*right answer&#10;&#10;vote: Who is most likely to…"></textarea>
+                  <button class="ghost" id="qappend">Add these questions</button>
+                </details>
+                <a href="#" id="qreset" style="color:var(--cyan)">reset to defaults</a>
+                <span class="muted">· saved on this browser</span>
+              </div>
             </details>
           </div>
           <div class="lobby-actions"><button class="big" id="start">Let's rumble ▶</button></div>
         </div>`;
       try { new QRCode($("#qr"), { text: joinUrl, width: 190, height: 190, colorDark: "#0d0820", colorLight: "#ffffff" }); } catch { $("#qr").remove(); }
-      const ta = $("#qtext");
-      ta.value = store.get("rr-questions") || DEFAULT_QUESTIONS;
-      const countQs = () => { $("#qn").textContent = ta.value.split("\n").filter((l) => /^\s*(\?|vote:)/i.test(l)).length; };
-      ta.oninput = () => { store.set("rr-questions", ta.value); countQs(); };
-      countQs();
-      $("#qreset").onclick = (e) => { e.preventDefault(); ta.value = DEFAULT_QUESTIONS; ta.oninput(); };
+      let model = null;
+      try { model = JSON.parse(store.get("rr-qmodel")); } catch {}
+      if (!Array.isArray(model)) model = parseQs(store.get("rr-questions") || DEFAULT_QUESTIONS);
+      const editor = mountEditor($("#qeditor"), model, (m) => {
+        store.set("rr-qmodel", JSON.stringify(m));
+        const bad = m.filter((q) => !qValid(q)).length;
+        $("#qn").textContent = `${m.length - bad} ready${bad ? `, ${bad} unfinished` : ""}`;
+      });
+      $("#qappend").onclick = () => {
+        const add = parseQs($("#qtext").value);
+        if (!add.length) return toast("Couldn't read any questions from that text");
+        editor.set([...model, ...add]);
+        $("#qtext").value = "";
+        toast(`➕ ${add.length} question${add.length > 1 ? "s" : ""} added`);
+      };
+      $("#qreset").onclick = (e) => { e.preventDefault(); if (confirm("Replace your questions with the default set?")) editor.set(parseQs(DEFAULT_QUESTIONS)); };
       $("#lobbySettings").onchange = () => store.set("rr-settings", JSON.stringify(readSettings($("#lobbySettings"))));
       document.querySelectorAll(".modecard").forEach((b) => (b.onclick = () => { store.set("rr-mode", b.dataset.mode); renderHost(false); }));
       $("#hostname").oninput = () => renderHost(false);
@@ -589,7 +633,8 @@ function renderHost(fresh) {
           store.set("rr-hostplayer-" + room, name);
           connectMine(() => sendMsg({ t: "start", mode: "play", questions: DEFAULT_QUESTIONS }));
         } else {
-          sendMsg({ t: "start", mode: "gm", questions: ta.value, settings: readSettings($("#lobbySettings")) });
+          if (!model.some(qValid)) return toast("Add at least one finished question");
+          sendMsg({ t: "start", mode: "gm", questions: serializeQs(model), settings: readSettings($("#lobbySettings")) });
         }
       };
       seenPlayers = new Set();
@@ -627,12 +672,18 @@ function renderHost(fresh) {
           <h1 class="qtext pop">${esc(s.q.text)}</h1>
           <div class="timer"><div class="timer-fill"></div><span class="timer-num"></span></div>
           <div class="tiles ${s.q.options.length <= 4 ? "four" : ""}">
-            ${s.q.options.map((o, i) => `<div class="tile pop" style="${tileStyle(i)}"><span class="shape">${SHAPES[i % SHAPES.length]}</span>${esc(o)}</div>`).join("")}
+            ${s.q.options.map((o, i) => `<div class="tile pop" data-i="${i}" style="${tileStyle(i)}"><span class="shape">${SHAPES[i % SHAPES.length]}</span>${esc(o)}</div>`).join("")}
           </div>
           <div class="live" id="live"></div>
           <div class="host-foot"><button class="ghost" id="skip">Reveal now ⏭</button></div>
         </div>`;
       $("#skip").onclick = () => sendMsg({ t: "skip" });
+      // Play along: the host answers by clicking the cards themselves.
+      document.querySelectorAll(".tile[data-i]").forEach((t) => (t.onclick = () => {
+        const me = mineState?.me;
+        if (state.mode !== "play" || mineState?.phase !== "question" || !me || me.answer !== null || mineFrozen) return;
+        sendMine({ t: "answer", i: +t.dataset.i });
+      }));
     }
     const live = s.players.filter((p) => p.connected);
     const done = s.players.filter((p) => p.answered);
@@ -755,6 +806,91 @@ function renderPlayer(fresh) {
   if (s.phase === "reveal" && fresh) navigator.vibrate?.(s.result?.delta > 0 ? 60 : [40, 60, 40]);
 }
 
+/* ---------- question editor ---------- */
+const blankQ = (kind = "quiz") => ({ kind, text: "", options: ["", "", "", ""], correct: 0 });
+const qValid = (q) => !!q.text.trim() && (q.kind === "vote" || (q.options.filter((o) => o.trim()).length >= 2 && !!q.options[q.correct]?.trim()));
+
+// Same text format the server reads: "? question", answer lines with * on the right one, "vote: prompt".
+function parseQs(text) {
+  const out = [];
+  let cur = null;
+  for (const raw of text.split("\n")) {
+    const line = raw.trim();
+    if (!line || line.startsWith("#")) continue;
+    const vote = line.match(/^vote:\s*(.+)$/i);
+    if (vote) { cur = null; out.push({ ...blankQ("vote"), text: vote[1] }); continue; }
+    if (line.startsWith("?")) { cur = { kind: "quiz", text: line.slice(1).trim(), options: [], correct: -1 }; out.push(cur); continue; }
+    if (cur && cur.options.length < 4) {
+      if (line.startsWith("*")) cur.correct = cur.options.length;
+      cur.options.push(line.replace(/^\*/, "").trim());
+    }
+  }
+  for (const q of out) {
+    while (q.options.length < 4) q.options.push("");
+    if (q.correct < 0) q.correct = 0;
+  }
+  return out;
+}
+function serializeQs(model) {
+  const clean = (t) => t.trim().replace(/^[?*#]+\s*/, "");
+  return model.filter(qValid).map((q) => q.kind === "vote"
+    ? `vote: ${q.text.trim()}`
+    : [`? ${q.text.trim()}`, ...q.options.map((o, i) => [clean(o), i]).filter(([o]) => o).map(([o, i]) => (i === q.correct ? "*" : "") + o)].join("\n")
+  ).join("\n\n");
+}
+
+function qcardHTML(q, n) {
+  return `<div class="qcard ${qValid(q) ? "" : "bad"}" data-n="${n}">
+    <div class="qhead">
+      <span class="qnum">${n + 1}</span>
+      <div class="seg2"><button data-kind="quiz" class="${q.kind === "quiz" ? "on" : ""}">🧠 Quiz</button><button data-kind="vote" class="${q.kind === "vote" ? "on" : ""}">🗳️ Vote</button></div>
+      <span class="grow"></span>
+      <button class="icon" data-act="up" title="Move up">↑</button><button class="icon" data-act="down" title="Move down">↓</button><button class="icon" data-act="del" title="Delete">✕</button>
+    </div>
+    <input data-f="text" maxlength="200" placeholder="${q.kind === "vote" ? "Who is most likely to…" : "Your question"}" value="${esc(q.text)}">
+    ${q.kind === "vote"
+      ? `<span class="muted" style="font-size:.85rem">Everyone votes for a teammate. The majority pick scores.</span>`
+      : `<div class="opts">${q.options.map((o, i) => `<div class="optrow" style="--c:${COLORS[i]}"><button class="mark ${i === q.correct ? "on" : ""}" data-correct="${i}" title="Mark as the right answer">${i === q.correct ? "✔" : SHAPES[i]}</button><input data-opt="${i}" maxlength="80" placeholder="${i < 2 ? "Answer" : "Answer (optional)"}" value="${esc(o)}"></div>`).join("")}</div>`}
+    <div class="bad-msg">${q.kind === "vote" ? "Needs a prompt" : "Needs a question, 2+ answers and a ✔ on a filled one"}</div>
+  </div>`;
+}
+
+// Edits the model array in place; typing doesn't redraw (keeps focus), structural changes do.
+function mountEditor(root, model, onChange) {
+  const draw = () => {
+    root.innerHTML = `<div class="qlist">${model.map(qcardHTML).join("")}</div>
+      <div class="qtools"><button class="ghost" data-add="quiz">+ Quiz question</button><button class="ghost" data-add="vote">+ Team vote</button></div>`;
+  };
+  root.oninput = (e) => {
+    const card = e.target.closest(".qcard");
+    if (!card) return;
+    const q = model[+card.dataset.n];
+    if (e.target.dataset.f === "text") q.text = e.target.value;
+    else if (e.target.dataset.opt != null) q.options[+e.target.dataset.opt] = e.target.value;
+    card.classList.toggle("bad", !qValid(q));
+    onChange(model);
+  };
+  root.onclick = (e) => {
+    const b = e.target.closest("button");
+    if (!b || !root.contains(b)) return;
+    e.preventDefault();
+    const n = +b.closest(".qcard")?.dataset.n;
+    if (b.dataset.add) model.push(blankQ(b.dataset.add));
+    else if (b.dataset.kind) model[n].kind = b.dataset.kind;
+    else if (b.dataset.correct != null) model[n].correct = +b.dataset.correct;
+    else if (b.dataset.act === "del") model.splice(n, 1);
+    else if (b.dataset.act === "up" && n > 0) [model[n - 1], model[n]] = [model[n], model[n - 1]];
+    else if (b.dataset.act === "down" && n < model.length - 1) [model[n + 1], model[n]] = [model[n], model[n + 1]];
+    else return;
+    draw();
+    onChange(model);
+    if (b.dataset.add) root.querySelector(".qcard:last-child [data-f=text]")?.focus();
+  };
+  draw();
+  onChange(model);
+  return { set(m) { model.splice(0, model.length, ...m); draw(); onChange(model); } };
+}
+
 /* ---------- host modes ---------- */
 const lobbyMode = () => (store.get("rr-mode") === "play" ? "play" : "gm");
 
@@ -807,10 +943,7 @@ function renderMine() {
     const answered = me.answer !== null;
     if (mineFrozen) html += `<span class="frz">🧊 Frozen by ${esc(me.frozenBy)}</span>`;
     else if (answered) html += `<span class="display">🔒 Locked in</span>`;
-    else html += s.q.options.map((o, pos) => {
-      const c = s.mod.id === "scramble" ? pos : o.i;
-      return `<button class="answer" data-i="${o.i}" style="${tileStyle(c)}"><span>${SHAPES[c % SHAPES.length]}</span>${esc(o.text)}</button>`;
-    }).join("");
+    else html += `<span class="display">👆 Click a card to answer</span>`;
     if (s.powerups) html += `
       <button class="power ${me.allInActive ? "on" : ""}" data-p="allin" ${me.allInUsed || answered ? "disabled" : ""}>🎲 ${me.allInActive ? "ALL-IN!" : "All-in"}</button>
       <button class="power" data-p="ice" ${me.iceUsed ? "disabled" : ""}>🧊 Ice</button>`;
@@ -822,8 +955,8 @@ function renderMine() {
   } else {
     html += `<span class="muted">You're playing too 🎮</span>`;
   }
+  document.body.classList.toggle("locked", s.phase !== "question" || me.answer !== null || mineFrozen);
   bar.innerHTML = html;
-  bar.querySelectorAll(".answer").forEach((b) => (b.onclick = () => sendMine({ t: "answer", i: +b.dataset.i })));
   bar.querySelectorAll("[data-p]").forEach((b) => (b.onclick = () => sendMine({ t: b.dataset.p })));
 }
 
@@ -845,19 +978,17 @@ function renderPanel() {
         <section class="card"><h2>Now</h2><div id="pnow"></div><div class="row" id="pactions"></div></section>
         <section class="card"><h2>Settings</h2><div id="psettings">${settingsHTML(s.settings, s.allMods)}</div><small class="muted">Changes apply from the next question.</small></section>
         <section class="card"><h2>Up next (<span id="pqn"></span>)</h2><div id="pqueue"></div>
-          <textarea id="padd" spellcheck="false" placeholder="? Your question
-wrong answer
-*right answer
-
-vote: Who is most likely to…"></textarea>
-          <button class="ghost" id="paddbtn">➕ Add to queue</button>
+          <div id="padd"></div>
+          <button class="big" id="paddbtn">➕ Add to queue</button>
         </section>
       </div>`;
     $("#psettings").onchange = () => sendMsg({ t: "settings", settings: readSettings($("#psettings")) });
+    const draft = [blankQ()];
+    const addEditor = mountEditor($("#padd"), draft, () => {});
     $("#paddbtn").onclick = () => {
-      if (!$("#padd").value.trim()) return;
-      sendMsg({ t: "queueAdd", questions: $("#padd").value });
-      $("#padd").value = "";
+      if (!draft.some(qValid)) return toast("Finish the question first (text, 2+ answers, a ✔)");
+      sendMsg({ t: "queueAdd", questions: serializeQs(draft) });
+      addEditor.set([blankQ()]);
     };
   }
   const phaseLabel = { lobby: "In the lobby", spin: "Spinning the wheel", question: "Question live", reveal: "Showing results", end: "Game over" }[s.phase];
