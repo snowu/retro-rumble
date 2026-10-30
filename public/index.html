@@ -358,6 +358,9 @@ body.drawing #toasts { top: 12px; bottom: auto; } /* keep toasts off the palette
 .tools .sz.on { border-color: var(--yellow); }
 .gform { display: flex; gap: 8px; } .gform input { flex: 1; min-width: 0; } .gform button { padding: 0 18px; border-radius: 12px; background: var(--pink); font-weight: 800; }
 #mybar .gform input { padding: 8px 12px; width: 260px; }
+#mybar .takebtns.mini { display: flex; gap: 6px; } #mybar .takebtns.mini button { padding: 8px 14px; font-size: 1rem; border-radius: 12px; }
+#mybar .mpct { display: flex; align-items: center; gap: 8px; color: var(--muted); font-weight: 600; } #mybar .mpct input { width: 200px; padding: 0; border: 0; background: none; } #mybar .mpct b { color: var(--yellow); min-width: 3.2em; text-align: right; }
+#mybar #mlock:disabled { opacity: .4; }
 #mybar select { font: inherit; color: var(--ink); background: #0008; border: 2px solid var(--line); border-radius: 10px; padding: 6px 10px; }
 .duo { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
 .duo .side { display: grid; gap: 8px; justify-items: center; font-weight: 800; font-size: 1.15rem; }
@@ -567,7 +570,7 @@ const params = new URLSearchParams(location.search);
 const API = location.hostname.endsWith("github.io") ? "https://retro-rumble.zancato-t.workers.dev" : location.origin;
 
 // Must match VERSION in src/index.ts. GitHub Pages caches the page for ~10 minutes, so an old tab can outlive a deploy.
-const BUILD = "2026-10-30.3";
+const BUILD = "2026-10-30.4";
 let endTimer = 0;
 let ws = null, role = null, room = null, state = null, offset = 0, lastKey = "", seenPlayers = new Set();
 let mine = null, mineState = null, mineFrozen = false; // the host's own player seat in Play-along mode
@@ -1084,7 +1087,7 @@ function renderHost(fresh) {
       const k = s.q.kind;
       const instr = { closest: "Type your best guess on your phone. Closest wins.", hottake: "Agree or disagree? Then guess what % of the team agrees.", write: "Write your answer on your phone. Nobody will know it's you… yet. 🤫", drawoff: "Two artists, one word. You vote for the best one next." }[k];
       app.innerHTML = `
-        <div class="host" id="inhost">
+        <div class="host qview" id="inhost">
           <div class="topbar">${qcount(s)}${k === "write" ? `<span class="muted">${KIND_LABEL[k]}</span>` : modBadge(s.mod)}</div>
           ${k === "drawoff" ? `<h1 class="qtext pop">🖌️ Draw-off: <span style="color:var(--yellow)">${esc(s.q.text)}</span></h1>` : `<h1 class="qtext pop ${k === "hottake" ? "quote" : ""}">${esc(s.q.text)}</h1>`}
           <p class="instr">${instr}</p>
@@ -1876,12 +1879,19 @@ function renderMine() {
     else if (!$("#mform")) {
       $("#mstat").innerHTML = s.q.kind === "closest"
         ? `<form class="gform" id="mform"><input id="minput" inputmode="decimal" autocomplete="off" placeholder="Your guess"><button>Lock in</button></form>`
-        : `<form class="gform" id="mform"><select id="magree"><option value="1">👍 Agree</option><option value="0">👎 Disagree</option></select>
-           <select id="mpct">${Array.from({ length: 21 }, (_, i) => `<option ${i === 10 ? "selected" : ""}>${i * 5}</option>`).join("")}</select><span class="muted">% agree</span><button>Lock in</button></form>`;
+        : `<form class="gform" id="mform"><span class="takebtns mini"><button type="button" data-agree="1">👍 Agree</button><button type="button" data-agree="0">👎 Disagree</button></span>
+           <span class="mpct"><input type="range" id="mpct" min="0" max="100" step="5" value="50"><b id="mpctv">50%</b> agree</span><button id="mlock" disabled>Lock in</button></form>`;
+      let agree = null;
+      $("#mform").querySelectorAll("[data-agree]").forEach((b) => (b.onclick = () => {
+        agree = b.dataset.agree === "1";
+        $("#mform").querySelectorAll("[data-agree]").forEach((x) => x.classList.toggle("on", x === b));
+        $("#mlock").disabled = false;
+      }));
+      if ($("#mpct")) $("#mpct").oninput = () => ($("#mpctv").textContent = $("#mpct").value + "%");
       $("#mform").onsubmit = (e) => {
         e.preventDefault();
         if (s.q.kind === "closest") { const v = $("#minput").value.trim(); if (v) sendMine({ t: "num", v }); }
-        else sendMine({ t: "take", agree: $("#magree").value === "1", pct: +$("#mpct").value });
+        else if (agree !== null) sendMine({ t: "take", agree, pct: +$("#mpct").value });
       };
     }
     document.body.classList.add("locked");
