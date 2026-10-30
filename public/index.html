@@ -378,6 +378,21 @@ body.drawing #toasts { top: 12px; bottom: auto; } /* keep toasts off the palette
 .phone .duo { gap: 8px; } .phone .duo .side { font-size: .9rem; }
 .host .duo.small { margin-top: 18px; } .host .duo.small .inkwrap { max-width: min(100%, 30vh); }
 .kindtag { text-align: center; }
+.preveal { display: grid; gap: 14px; width: 100%; max-width: 900px; margin: 0 auto; }
+.presult { display: flex; align-items: center; justify-content: center; gap: 14px; flex-wrap: wrap; text-align: center; }
+.presult .picon { font-size: 2.6rem; } .presult .result-delta { font-size: 2.4rem; } .pnote { width: 100%; font-weight: 700; color: var(--muted); }
+.plist { display: grid; gap: 8px; grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr)); }
+.prow { --c: #888; background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 10px 12px; display: grid; gap: 8px; }
+.prow.win { border: 2px solid var(--c); background: color-mix(in srgb, var(--c) 18%, var(--surface)); }
+.prow:not(.win) { opacity: .75; }
+.ptop { display: flex; align-items: center; gap: 10px; } .ptop b { flex: 1; }
+.pchip { width: 30px; height: 30px; border-radius: 8px; background: var(--c); display: grid; place-items: center; color: #fff; font-size: .9rem; flex: none; }
+.pwin { width: 26px; height: 26px; border-radius: 50%; background: var(--green); color: #0b2a1a; display: grid; place-items: center; font-weight: 900; }
+.pwho { display: flex; flex-wrap: wrap; gap: 5px; } .pwho span { background: #ffffff12; border-radius: 999px; padding: 3px 10px; font-weight: 700; font-size: .9rem; }
+.pwho .me-chip, .ptop .me-chip { outline: 2px solid var(--yellow); } .pwho .none { background: none; color: var(--muted); font-weight: 600; }
+.pboard { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 6px; display: grid; }
+.pb { display: grid; grid-template-columns: 30px 1fr auto auto; gap: 10px; align-items: center; padding: 6px 8px; font-weight: 700; border-radius: 10px; }
+.pb + .pb { border-top: 1px solid var(--border); } .pb.mine { background: #ffd23f1a; } .pb b { min-width: 52px; text-align: right; font-variant-numeric: tabular-nums; }
 .stage { display: grid; gap: 18px; justify-items: center; text-align: center; align-content: center; }
 .stage .star { font-size: clamp(1.6rem, 3.4vw, 2.8rem); font-weight: 800; } .stage .star b { color: var(--yellow); }
 .stage .type { font-size: clamp(1.1rem, 2vw, 1.6rem); color: var(--cyan); font-weight: 700; }
@@ -600,7 +615,7 @@ const params = new URLSearchParams(location.search);
 const API = location.hostname.endsWith("github.io") ? "https://retro-rumble.zancato-t.workers.dev" : location.origin;
 
 // Must match VERSION in src/index.ts. GitHub Pages caches the page for ~10 minutes, so an old tab can outlive a deploy.
-const BUILD = "2026-10-30.13";
+const BUILD = "2026-10-30.14";
 let endTimer = 0, avOpen = false; // avOpen: the lobby avatar picker stays open across re-renders
 let ws = null, role = null, room = null, state = null, offset = 0, lastKey = "", seenPlayers = new Set();
 let mine = null, mineState = null, mineFrozen = false; // the host's own player seat in Play-along mode
@@ -767,7 +782,7 @@ function connect() {
     if (msg.t === "state") {
       offset = msg.now - Date.now();
       if (msg.qi !== ink.qi) ink = { qi: msg.qi, strokes: [] };
-      $("#stale").style.display = msg.ver && msg.ver !== BUILD ? "block" : "none";
+      checkVersion(msg);
       state = msg;
       render();
     }
@@ -793,6 +808,20 @@ function connect() {
   };
 }
 const sendMsg = (m) => ws?.readyState === 1 && ws.send(JSON.stringify(m));
+// GitHub Pages lets browsers reuse the page for ~10 minutes, so an open tab can outlive a deploy.
+// When the server is newer, fetch the fresh page under a new URL (a guaranteed cache miss),
+// once per version and never mid-question. Seats, names and scores survive the reload.
+function checkVersion(msg) {
+  if (!msg.ver || msg.ver === BUILD) return ($("#stale").style.display = "none");
+  const tried = sessionGet("rr-updated-to") === msg.ver;
+  if (!tried && msg.phase !== "question") {
+    try { sessionStorage.setItem("rr-updated-to", msg.ver); } catch {}
+    const u = new URL(location.href);
+    u.searchParams.set("v", msg.ver);
+    return location.replace(u.toString());
+  }
+  $("#stale").style.display = tried ? "block" : "none"; // the new page isn't up yet: ask for a manual refresh
+}
 const sessionGet = (k) => { try { return sessionStorage.getItem(k); } catch { return null; } };
 function myId() {
   // Per tab, so several tabs on one PC are separate players (a reload keeps the same one).
@@ -1436,6 +1465,44 @@ const reactsHTML = () => `<div class="reacts">${REACTIONS.map((e) => `<button da
 const bindReacts = () => document.querySelectorAll(".reacts button").forEach((b) => (b.onclick = () => sendMsg({ t: "react", e: b.dataset.e })));
 const meHead = (s) => `<div class="me"><span class="av">${s.me.emoji}</span>${esc(s.me.name)}${s.phase !== "lobby" ? `<span class="rank">#${s.me.rank} of ${s.playerCount}</span>` : ""}<span class="sc">${s.me.score}</span></div>`;
 
+// The player's reveal: your result up top, then what everyone picked and the standings.
+function playerRevealHTML(s) {
+  const me = s.me, r = s.result || { delta: 0, correct: null, note: "" }, k = s.q?.kind;
+  const byId = Object.fromEntries(s.roster.map((p) => [p.id, p]));
+  const chip = (id, extra = "") => byId[id] ? `<span class="${id === me.id ? "me-chip" : ""}">${byId[id].emoji} ${esc(byId[id].name)}${extra}</span>` : "";
+  const icon = r.correct === true ? "✅" : r.correct === false ? "❌" : r.delta > 0 ? "🎉" : "😶";
+  let what = "";
+  if (s.q && s.q.options.length) {
+    // quiz, vote, who wrote it, draw-off vote: every option with the people who picked it
+    const pickers = (i) => Object.entries(s.picks).filter(([, a]) => a === i).map(([id]) => id);
+    what = `<div class="plist">${s.q.options.map((o, pos) => {
+      const win = s.winners.includes(o.i), who = pickers(o.i);
+      return `<div class="prow ${win ? "win" : ""}" style="--c:${COLORS[(me.banana ? pos : o.i) % COLORS.length]}">
+        <div class="ptop"><span class="pchip">${SHAPES[(me.banana ? pos : o.i) % SHAPES.length]}</span><b>${esc(o.text)}</b>${win ? `<span class="pwin">✓</span>` : ""}</div>
+        <div class="pwho">${who.map((id) => chip(id)).join("") || `<span class="none">nobody</span>`}</div>
+      </div>`;
+    }).join("")}</div>`;
+  } else if (k === "closest" && s.info) {
+    what = `<div class="dword"><span class="muted">The answer</span><b>${fmtNum(s.info.answer)}</b></div>
+      <div class="plist">${s.info.guesses.map((g, n) => `<div class="prow ${n === 0 ? "win" : ""}" style="--c:#2d8cff"><div class="ptop">${chip(g.id)}<span class="grow"></span><b>${fmtNum(g.v)}</b><small class="muted">${g.diff === 0 ? "🎯" : `±${fmtNum(g.diff)}`}</small></div></div>`).join("") || `<p class="muted">No guesses</p>`}</div>`;
+  } else if (k === "hottake" && s.info) {
+    what = `<div class="dword"><span class="muted">The team</span><b>${s.info.pct}% agree</b></div>
+      <div class="plist"><div class="prow" style="--c:#22c55e"><div class="ptop"><b>👍 Agree</b></div><div class="pwho">${s.info.agree.map((id) => chip(id)).join("") || `<span class="none">nobody</span>`}</div></div>
+      <div class="prow" style="--c:#ff3d6e"><div class="ptop"><b>👎 Disagree</b></div><div class="pwho">${s.info.disagree.map((id) => chip(id)).join("") || `<span class="none">nobody</span>`}</div></div></div>`;
+  } else if (k === "draw" || k === "perform") {
+    what = `<div class="dword"><span class="muted">It was</span><b>${esc(s.q.text)}</b></div>
+      <div class="plist"><div class="prow win" style="--c:#22c55e"><div class="ptop"><b>Got it</b></div><div class="pwho">${s.gotIt.map((g) => chip(g.id, ` <small>${(g.t / 1000).toFixed(1)}s</small>`)).join("") || `<span class="none">nobody 💀</span>`}</div></div></div>`;
+  }
+  const board = `<div class="pboard">${s.roster.slice(0, 6).concat(s.roster.slice(0, 6).some((p) => p.id === me.id) ? [] : s.roster.filter((p) => p.id === me.id)).map((p) =>
+    `<div class="pb ${p.id === me.id ? "mine" : ""}"><span>${["🥇", "🥈", "🥉"][p.rank - 1] || p.rank}</span><span>${p.emoji} ${esc(p.name)}</span><small class="${p.delta > 0 ? "up" : p.delta < 0 ? "down" : "muted"}">${p.delta > 0 ? "+" : ""}${p.delta || ""}</small><b>${p.score}</b></div>`).join("")}</div>`;
+  return `<div class="preveal">
+    <div class="presult pop"><span class="picon">${icon}</span><span class="result-delta ${r.delta > 0 ? "up" : r.delta < 0 ? "down" : "muted"}">${r.delta > 0 ? "+" : ""}${r.delta}</span>${r.note ? `<span class="pnote">${esc(r.note)}</span>` : ""}</div>
+    ${s.q && k !== "closest" && k !== "hottake" && k !== "draw" && k !== "perform" ? `<p class="qtext small" style="margin:0">${esc(s.q.text)}</p>` : ""}
+    ${what}
+    ${board}
+  </div>`;
+}
+
 // Built once per draw round and then patched, so the pad and the guess box survive every state update.
 function renderDrawPlayer() {
   const s = state, me = s.me, off = s.q.kind === "drawoff";
@@ -1681,22 +1748,7 @@ function renderPlayer(fresh) {
       ${powersHTML(s, answered)}
       ${overlaysHTML(me)}`;
   } else if (s.phase === "reveal") {
-    const r = s.result || { delta: 0, correct: null, note: "" };
-    const draw = s.q?.kind === "draw" || s.q?.kind === "perform";
-    const icon = r.correct === true ? "✅" : r.correct === false ? "❌" : draw ? "🎨" : r.delta > 0 ? "🗳️" : "😶";
-    body = `<div class="center">
-      <div class="huge pop">${icon}</div>
-      <div class="result-delta pop ${r.delta > 0 ? "up" : r.delta < 0 ? "down" : "muted"}">${r.delta > 0 ? "+" : ""}${r.delta}</div>
-      ${r.note ? `<p><b>${esc(r.note)}</b></p>` : ""}
-      ${draw ? `<div class="dword"><span class="muted">${s.q.kind === "perform" ? "It was" : "The word was"}</span><b>${esc(s.q.text)}</b></div>` : ""}
-      ${s.q?.kind === "closest" && s.info ? `<div class="dword"><span class="muted">The answer</span><b>${fmtNum(s.info.answer)}</b>${me.answer !== null ? `<small class="muted">you said ${fmtNum(s.mine.num)}</small>` : ""}</div>` : ""}
-      ${s.q?.kind === "hottake" && s.info ? `<div class="dword"><span class="muted">The team</span><b>${s.info.pct}% agree</b>${me.answer !== null ? `<small class="muted">you guessed ${s.mine.pct}%</small>` : ""}</div>` : ""}
-      ${s.q && s.winners.length ? `
-        <div class="muted">${{ vote: "The team picked", who: "Written by", dvote: "Winner" }[s.q.kind] || "Correct answer"}</div>
-        ${s.q.options.map((o, pos) => s.winners.includes(o.i) ? `<div class="answer correct-card pop" style="${tileStyle(me.banana ? pos : o.i)}"><span>${SHAPES[(me.banana ? pos : o.i) % SHAPES.length]}</span>${esc(o.text)}</div>` : "").join("")}
-        ${me.answer !== null && !s.winners.includes(me.answer) ? `<p class="muted">You picked: <b>${esc(s.q.options.find((o) => o.i === me.answer)?.text ?? "")}</b></p>` : ""}` : ""}
-      <h2 class="display">#${me.rank} <span class="muted">of ${s.playerCount}</span></h2>
-    </div>`;
+    body = playerRevealHTML(s);
   } else if (s.phase === "end") {
     const medal = ["🥇", "🥈", "🥉"][me.rank - 1] || "🫡";
     body = `<div class="center"><div class="huge pop">${medal}</div><h2 class="display">#${me.rank} of ${s.playerCount}</h2><p class="result-delta">${me.score}</p>
