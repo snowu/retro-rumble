@@ -658,7 +658,7 @@ const params = new URLSearchParams(location.search);
 const API = location.hostname.endsWith("github.io") ? "https://retro-rumble.zancato-t.workers.dev" : location.origin;
 
 // Must match VERSION in src/index.ts. GitHub Pages caches the page for ~10 minutes, so an old tab can outlive a deploy.
-const BUILD = "2026-10-30.21";
+const BUILD = "2026-10-30.22";
 let endTimer = 0, avOpen = false; // avOpen: the lobby avatar picker stays open across re-renders
 let ws = null, role = null, room = null, state = null, offset = 0, lastKey = "", seenPlayers = new Set();
 let mine = null, mineState = null; // the host's own player seat in Play-along mode
@@ -967,7 +967,7 @@ function introHTML(s) {
     draw: ["🎨", `${d ? `<b>${d.drawerEmoji} ${esc(d.drawerName)}</b>` : "Someone"} draws a secret word. Everyone else types guesses, fastest gets the most.`],
     drawoff: ["🖌️", `${who(a)} vs ${who(b)}. Same word, two drawings, and the room picks the winner.`],
     closest: ["📏", "A number question. Type your best guess, closest wins."],
-    hottake: ["🔥", "Agree or disagree? Then guess what % of the team agrees with you."],
+    hottake: ["🔥", "Agree or disagree? Then guess what % of the team agrees. Points come from how close your guess is."],
     write: ["✍️", "Everyone writes an answer. Then you guess who wrote what."],
     quiz: ["🧠", "Trivia time. Fastest right answer scores the most."],
     vote: ["🗳️", "Vote for a teammate. You score if you pick who the room picks."],
@@ -1274,7 +1274,7 @@ function renderHost(fresh) {
   if (s.phase === "question" && (INPUT_KINDS.includes(s.q.kind) || s.q.kind === "drawoff")) {
     if (fresh || !$("#inhost")) {
       const k = s.q.kind;
-      const instr = { closest: "Type your best guess on your phone. Closest wins.", hottake: "Agree or disagree? Then guess what % of the team agrees.", write: "Write your answer on your phone. Nobody will know it's you… yet. 🤫", drawoff: "Two artists, one word. You vote for the best one next." }[k];
+      const instr = { closest: "Type your best guess on your phone. Closest wins.", hottake: "Agree or disagree? Then guess what % of the team agrees. The closer your guess, the more points.", write: "Write your answer on your phone. Nobody will know it's you… yet. 🤫", drawoff: "Two artists, one word. You vote for the best one next." }[k];
       app.innerHTML = `
         <div class="host qview" id="inhost">
           <div class="topbar">${qcount(s)}${k === "write" ? `<span class="muted">${KIND_LABEL[k]}</span>` : modBadge(s.mod)}</div>
@@ -1552,7 +1552,9 @@ const factsHTML = (facts) => !facts?.length ? "" : `<h2 class="display" style="t
 function playerRevealHTML(s) {
   const me = s.me, r = s.result || { delta: 0, correct: null, note: "" }, k = s.q?.kind;
   const byId = Object.fromEntries(s.roster.map((p) => [p.id, p]));
-  const icon = r.correct === true ? "✅" : r.correct === false ? "❌" : r.delta > 0 ? "🎉" : "😶";
+  // A hot take has no wrong side: a close guess is a 🔮, anything else that scored a 🎉.
+  const icon = k === "hottake" ? (r.correct ? "🔮" : r.delta > 0 ? "🎉" : "😶")
+    : r.correct === true ? "✅" : r.correct === false ? "❌" : r.delta > 0 ? "🎉" : "😶";
   // Avatars only, name on hover; yours is ringed. Past 12 it's "+N".
   const faces = (ids) => !ids.length ? `<span class="none">nobody</span>`
     : ids.slice(0, 12).map((id) => byId[id] ? `<span class="face ${id === me.id ? "mine" : ""}" title="${esc(byId[id].name)}">${byId[id].emoji}</span>` : "").join("") + (ids.length > 12 ? `<span class="more">+${ids.length - 12}</span>` : "");
@@ -1662,7 +1664,8 @@ function renderInputPlayer() {
       ? `<form class="gform" id="inform"><input class="numin" id="inval" inputmode="decimal" autocomplete="off" placeholder="Your guess"><button>Lock in</button></form>`
       : k === "hottake"
       ? `<div class="takebtns"><button data-agree="1">👍 Agree</button><button data-agree="0">👎 Disagree</button></div>
-         <div class="pctrow">How much of the team agrees?<b id="pctv">50%</b><input type="range" id="pct" min="0" max="100" step="5" value="50"></div>
+         <div class="pctrow">How much of the team agrees, you included?<b id="pctv">50%</b><input type="range" id="pct" min="0" max="100" step="5" value="50"></div>
+         <p class="muted" style="text-align:center;margin:0">Your side is just your honest take. Points come from the guess: 1000 if it's spot on, 25 less for every % you're off.</p>
          <button class="big" id="tlock" disabled>Pick a side first</button>`
       : `<form id="inform" style="display:grid;gap:10px"><textarea class="win" id="inval" maxlength="120" placeholder="Your answer…"></textarea><button class="big">Send it 🤫</button></form>`;
     app.innerHTML = `<div class="phone" id="inroot" data-key="${key}">

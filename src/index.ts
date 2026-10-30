@@ -264,7 +264,7 @@ function cleanSettings(raw: unknown, prev: Settings): Settings {
 }
 
 // Bump together with BUILD in public/index.html: pages with an older BUILD ask to be refreshed.
-const VERSION = "2026-10-30.21";
+const VERSION = "2026-10-30.22";
 const SPIN_MS = 6500;
 const INTRO_MS = 5000;
 const FREEZE_MS = 5000;
@@ -1224,7 +1224,7 @@ export class Room extends DurableObject<Env> {
     for (const p of everyone) {
       if (p.answer === null) { p.stats.ghost++; results[p.id] = { delta: 0, correct: null, note: "sat this one out" }; continue; }
       const off = Math.abs(p.pct - pct);
-      const r: Result = { delta: Math.max(0, Math.round(1000 - 25 * off)) * mult, correct: off <= 10, note: `guessed ${p.pct}%${off <= 5 ? " · 🔮 mind reader" : ""}` };
+      const r: Result = { delta: Math.max(0, Math.round(1000 - 25 * off)) * mult, correct: off <= 10, note: `guessed ${p.pct}%, it was ${pct}%: ${off ? `off by ${off}` : "spot on"}${off <= 5 ? " · 🔮 mind reader" : ""}` };
       this.allIn(p, off <= 10, r);
       results[p.id] = r;
     }
