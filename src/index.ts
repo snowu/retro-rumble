@@ -261,7 +261,7 @@ function cleanSettings(raw: unknown, prev: Settings): Settings {
 }
 
 // Bump together with BUILD in public/index.html: pages with an older BUILD ask to be refreshed.
-const VERSION = "2026-10-30.2";
+const VERSION = "2026-10-30.3";
 const SPIN_MS = 6500;
 const INTRO_MS = 5000;
 const FREEZE_MS = 5000;
@@ -792,7 +792,7 @@ export class Room extends DurableObject<Env> {
       if (!REACTIONS.includes(e) || now - p.lastReact < 250) return;
       p.lastReact = now;
       p.stats.reacts++;
-      this.toHosts({ t: "react", e });
+      this.toAllBut("", { t: "react", e }); // every screen, so remote players see each other's reactions too
     }
   }
 
