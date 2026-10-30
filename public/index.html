@@ -302,7 +302,7 @@ body.gm-host #cpbtn { display: block; }
 .fresh .intro .pop:nth-child(2) { animation-delay: .15s; } .fresh .intro .pop:nth-child(3) { animation-delay: .3s; } .fresh .intro .pop:nth-child(4) { animation-delay: .6s; }
 /* desktop players: a roomier controller instead of a stretched phone */
 @media (min-width: 760px) {
-  .phone { max-width: 900px; padding: 28px 32px 120px; gap: 18px; }
+  .phone { max-width: 1100px; padding: 28px 32px 120px; gap: 18px; }
   .me { background: var(--surface); border: 1px solid var(--border); border-radius: 16px; padding: 10px 16px; }
   .me .av { font-size: 2rem; }
   .me .sc { font-size: 1.3rem; background: #ffd23f1a; border-radius: 999px; padding: 4px 14px; }
@@ -378,20 +378,22 @@ body.drawing #toasts { top: 12px; bottom: auto; } /* keep toasts off the palette
 .phone .duo { gap: 8px; } .phone .duo .side { font-size: .9rem; }
 .host .duo.small { margin-top: 18px; } .host .duo.small .inkwrap { max-width: min(100%, 30vh); }
 .kindtag { text-align: center; }
-.preveal { display: grid; gap: 14px; width: 100%; max-width: 900px; margin: 0 auto; }
+.preveal { display: grid; gap: 14px; width: 100%; max-width: 1100px; margin: 0 auto; }
 .presult { display: flex; align-items: center; justify-content: center; gap: 14px; flex-wrap: wrap; text-align: center; }
-.presult .picon { font-size: 2.6rem; } .presult .result-delta { font-size: 2.4rem; } .pnote { width: 100%; font-weight: 700; color: var(--muted); }
+.presult .picon { font-size: 2.6rem; } .presult .result-delta { font-size: 2.4rem; } .pnote { width: 100%; font-weight: 700; color: var(--muted); font-size: 1.1rem; }
 .plist { display: grid; gap: 8px; grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr)); }
-.prow { --c: #888; background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 10px 12px; display: grid; gap: 8px; }
+/* on PC, up to 4 options share one row instead of wrapping the last one alone */
+@media (min-width: 760px) { .plist.n2 { grid-template-columns: repeat(2, 1fr); } .plist.n3 { grid-template-columns: repeat(3, 1fr); } .plist.n4 { grid-template-columns: repeat(4, 1fr); } .plist.many { grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); } }
+.prow { --c: #888; background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 12px 14px; display: grid; gap: 10px; font-size: 1.15rem; }
 .prow.win { border: 2px solid var(--c); background: color-mix(in srgb, var(--c) 18%, var(--surface)); }
 .prow:not(.win) { opacity: .75; }
 .ptop { display: flex; align-items: center; gap: 10px; } .ptop b { flex: 1; }
-.pchip { width: 30px; height: 30px; border-radius: 8px; background: var(--c); display: grid; place-items: center; color: #fff; font-size: .9rem; flex: none; }
+.pchip { width: 34px; height: 34px; border-radius: 8px; background: var(--c); display: grid; place-items: center; color: #fff; font-size: .9rem; flex: none; }
 .pwin { width: 26px; height: 26px; border-radius: 50%; background: var(--green); color: #0b2a1a; display: grid; place-items: center; font-weight: 900; }
-.pwho { display: flex; flex-wrap: wrap; gap: 5px; } .pwho span { background: #ffffff12; border-radius: 999px; padding: 3px 10px; font-weight: 700; font-size: .9rem; }
+.pwho { display: flex; flex-wrap: wrap; gap: 5px; } .pwho span { background: #ffffff12; border-radius: 999px; padding: 4px 12px; font-weight: 700; font-size: 1rem; }
 .pwho .me-chip, .ptop .me-chip { outline: 2px solid var(--yellow); } .pwho .none { background: none; color: var(--muted); font-weight: 600; }
 .pboard { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 6px; display: grid; }
-.pb { display: grid; grid-template-columns: 30px 1fr auto auto; gap: 10px; align-items: center; padding: 6px 8px; font-weight: 700; border-radius: 10px; }
+.pb { display: grid; grid-template-columns: 34px 1fr auto auto; gap: 12px; align-items: center; padding: 8px 10px; font-weight: 700; font-size: 1.1rem; border-radius: 10px; }
 .pb + .pb { border-top: 1px solid var(--border); } .pb.mine { background: #ffd23f1a; } .pb b { min-width: 52px; text-align: right; font-variant-numeric: tabular-nums; }
 .stage { display: grid; gap: 18px; justify-items: center; text-align: center; align-content: center; }
 .stage .star { font-size: clamp(1.6rem, 3.4vw, 2.8rem); font-weight: 800; } .stage .star b { color: var(--yellow); }
@@ -615,7 +617,7 @@ const params = new URLSearchParams(location.search);
 const API = location.hostname.endsWith("github.io") ? "https://retro-rumble.zancato-t.workers.dev" : location.origin;
 
 // Must match VERSION in src/index.ts. GitHub Pages caches the page for ~10 minutes, so an old tab can outlive a deploy.
-const BUILD = "2026-10-30.15";
+const BUILD = "2026-10-30.16";
 let endTimer = 0, avOpen = false; // avOpen: the lobby avatar picker stays open across re-renders
 let ws = null, role = null, room = null, state = null, offset = 0, lastKey = "", seenPlayers = new Set();
 let mine = null, mineState = null; // the host's own player seat in Play-along mode
@@ -1476,7 +1478,8 @@ function playerRevealHTML(s) {
   if (s.q && s.q.options.length) {
     // quiz, vote, who wrote it, draw-off vote: every option with the people who picked it
     const pickers = (i) => Object.entries(s.picks).filter(([, a]) => a === i).map(([id]) => id);
-    what = `<div class="plist">${s.q.options.map((o, pos) => {
+    const n = s.q.options.length;
+    what = `<div class="plist ${n <= 4 ? "n" + n : "many"}">${s.q.options.map((o, pos) => {
       const win = s.winners.includes(o.i), who = pickers(o.i);
       return `<div class="prow ${win ? "win" : ""}" style="--c:${COLORS[(me.banana ? pos : o.i) % COLORS.length]}">
         <div class="ptop"><span class="pchip">${SHAPES[(me.banana ? pos : o.i) % SHAPES.length]}</span><b>${esc(o.text)}</b>${win ? `<span class="pwin">✓</span>` : ""}</div>
@@ -1488,7 +1491,7 @@ function playerRevealHTML(s) {
       <div class="plist">${s.info.guesses.map((g, n) => `<div class="prow ${n === 0 ? "win" : ""}" style="--c:#2d8cff"><div class="ptop">${chip(g.id)}<span class="grow"></span><b>${fmtNum(g.v)}</b><small class="muted">${g.diff === 0 ? "🎯" : `±${fmtNum(g.diff)}`}</small></div></div>`).join("") || `<p class="muted">No guesses</p>`}</div>`;
   } else if (k === "hottake" && s.info) {
     what = `<div class="dword"><span class="muted">The team</span><b>${s.info.pct}% agree</b></div>
-      <div class="plist"><div class="prow" style="--c:#22c55e"><div class="ptop"><b>👍 Agree</b></div><div class="pwho">${s.info.agree.map((id) => chip(id)).join("") || `<span class="none">nobody</span>`}</div></div>
+      <div class="plist n2"><div class="prow" style="--c:#22c55e"><div class="ptop"><b>👍 Agree</b></div><div class="pwho">${s.info.agree.map((id) => chip(id)).join("") || `<span class="none">nobody</span>`}</div></div>
       <div class="prow" style="--c:#ff3d6e"><div class="ptop"><b>👎 Disagree</b></div><div class="pwho">${s.info.disagree.map((id) => chip(id)).join("") || `<span class="none">nobody</span>`}</div></div></div>`;
   } else if (k === "draw" || k === "perform") {
     what = `<div class="dword"><span class="muted">It was</span><b>${esc(s.q.text)}</b></div>
