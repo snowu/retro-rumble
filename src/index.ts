@@ -264,7 +264,7 @@ function cleanSettings(raw: unknown, prev: Settings): Settings {
 }
 
 // Bump together with BUILD in public/index.html: pages with an older BUILD ask to be refreshed.
-const VERSION = "2026-10-30.19";
+const VERSION = "2026-10-30.20";
 const SPIN_MS = 6500;
 const INTRO_MS = 5000;
 const FREEZE_MS = 5000;

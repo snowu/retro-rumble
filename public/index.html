@@ -405,7 +405,7 @@ body.drawing #toasts { top: 12px; bottom: auto; } /* keep toasts off the palette
   .orow .pchip { width: 34px; height: 34px; }
 }
 .pboard .board-title { padding: 6px 10px 4px; }
-.pb.gap { display: block; text-align: center; color: var(--muted); padding: 0; }
+.pboard.dense .pb { padding: 4px 10px; font-size: 1rem; }
 .pbname { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .presult { display: flex; align-items: center; justify-content: center; gap: 14px; flex-wrap: wrap; text-align: center; }
 .presult .picon { font-size: 2.6rem; } .presult .result-delta { font-size: 2.4rem; } .pnote { width: 100%; font-weight: 700; color: var(--muted); font-size: 1.1rem; }
@@ -656,7 +656,7 @@ const params = new URLSearchParams(location.search);
 const API = location.hostname.endsWith("github.io") ? "https://retro-rumble.zancato-t.workers.dev" : location.origin;
 
 // Must match VERSION in src/index.ts. GitHub Pages caches the page for ~10 minutes, so an old tab can outlive a deploy.
-const BUILD = "2026-10-30.19";
+const BUILD = "2026-10-30.20";
 let endTimer = 0, avOpen = false; // avOpen: the lobby avatar picker stays open across re-renders
 let ws = null, role = null, room = null, state = null, offset = 0, lastKey = "", seenPlayers = new Set();
 let mine = null, mineState = null; // the host's own player seat in Play-along mode
@@ -1576,11 +1576,9 @@ function playerRevealHTML(s) {
     answer = `It was <b>${esc(s.q.text)}</b>`;
     what = s.gotIt.map((g, n) => byId[g.id] ? `<div class="orow guess ${n === 0 ? "win" : ""}" style="--c:#22c55e"><span class="rk">${["🥇", "🥈", "🥉"][n] || n + 1}</span><span class="olabel">${byId[g.id].emoji} ${esc(byId[g.id].name)}</span><b>${(g.t / 1000).toFixed(1)}s</b></div>` : "").join("") || `<p class="muted">Nobody got it 💀</p>`;
   }
-  // Standings: top 5, then you if you're further down. ▲▼ = places moved this round.
-  const top = s.roster.slice(0, 5), mineRow = s.roster.find((p) => p.id === me.id);
-  const list = top.includes(mineRow) ? top : [...top, null, mineRow];
+  // Standings: everyone, in tighter rows for big groups. ▲▼ = places moved this round.
+  const list = s.roster;
   const standing = (p) => {
-    if (!p) return `<div class="pb gap">⋯</div>`;
     const moved = p.was ? p.was - p.rank : 0;
     return `<div class="pb ${p.id === me.id ? "mine" : ""}"><span>${["🥇", "🥈", "🥉"][p.rank - 1] || p.rank}</span><span class="pbname">${p.emoji} ${esc(p.name)} ${moved > 0 ? `<small class="up">▲${moved}</small>` : moved < 0 ? `<small class="down">▼${-moved}</small>` : ""}</span><small class="${p.delta > 0 ? "up" : p.delta < 0 ? "down" : "muted"}">${p.delta > 0 ? "+" : ""}${p.delta || ""}</small><b>${p.score}</b></div>`;
   };
@@ -1589,7 +1587,7 @@ function playerRevealHTML(s) {
     ${s.headline ? `<p class="phead">${esc(s.headline)}</p>` : ""}
     ${s.q && !answer ? `<p class="qtext small" style="margin:0">${esc(s.q.text)}</p>` : ""}
     ${answer ? `<p class="panswer">${answer}</p>` : ""}
-    <div class="rv2"><div class="olist">${what}</div><div class="pboard"><div class="board-title">Standings</div>${list.map(standing).join("")}</div></div>
+    <div class="rv2"><div class="olist">${what}</div><div class="pboard ${list.length > 8 ? "dense" : ""}"><div class="board-title">Standings</div>${list.map(standing).join("")}</div></div>
     ${role === "player" ? `<p class="muted" style="text-align:center;margin:0">⏳ Next round when the host is ready</p>` : ""}
     ${perfChipHTML(s)}
   </div>`;
