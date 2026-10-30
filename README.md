@@ -16,7 +16,7 @@ Chaotic multiplayer quiz for sprint retros. Everyone plays from their own phone 
 - 🎤 The big screen roasts the room after each reveal
 - 🏅 Special awards before the podium: Overconfident, Sloth, Lone Wolf, Keyboard Warrior, Ghost, Participation Trophy…
 - 🔥 Streaks, live emoji reactions, podium and confetti
-- 📚 A trivia recap on the end screen: a sentence from Wikipedia about each trivia question, to chat about after the game
+- 📚 A sentence from Wikipedia about each trivia question on its results screen, and all of them again in a recap on the end screen
 
 Two host modes, picked in the lobby:
 

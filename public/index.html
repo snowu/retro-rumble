@@ -440,6 +440,8 @@ body.drawing #toasts { top: 12px; bottom: auto; } /* keep toasts off the palette
 .facts { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 320px), 1fr)); gap: 10px; width: 100%; text-align: left; }
 .fact { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 12px 14px; display: grid; gap: 6px; align-content: start; }
 .fact p { margin: 0; line-height: 1.45; }
+.pfact { margin: 0 auto; max-width: 820px; text-align: center; color: var(--muted); line-height: 1.45; }
+.pfact a { color: var(--cyan); font-weight: 700; text-decoration: none; white-space: nowrap; }
 .fact a { color: var(--cyan); font-size: .85rem; font-weight: 700; text-decoration: none; }
 .bubble .mic { font-size: 1rem; }
 .lineup { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; }
@@ -656,7 +658,7 @@ const params = new URLSearchParams(location.search);
 const API = location.hostname.endsWith("github.io") ? "https://retro-rumble.zancato-t.workers.dev" : location.origin;
 
 // Must match VERSION in src/index.ts. GitHub Pages caches the page for ~10 minutes, so an old tab can outlive a deploy.
-const BUILD = "2026-10-30.20";
+const BUILD = "2026-10-30.21";
 let endTimer = 0, avOpen = false; // avOpen: the lobby avatar picker stays open across re-renders
 let ws = null, role = null, room = null, state = null, offset = 0, lastKey = "", seenPlayers = new Set();
 let mine = null, mineState = null; // the host's own player seat in Play-along mode
@@ -1541,10 +1543,11 @@ const perfText = (on, verb) => on
 const perfBtnHTML = (on, verb) => `<button class="perfbtn ${on ? "on" : ""}" id="perfbtn">${perfText(on, verb)}</button>`;
 const perfChipHTML = (s) => s.mode !== "play" ? ""
   : `<button class="perfchip ${s.me.performer ? "on" : ""}" id="perfbtn">${s.me.performer ? "🎤 You're a performer · opt out" : "🎤 Want a turn performing? Opt in"}</button>`;
+const wikiURL = (title) => `https://en.wikipedia.org/wiki/${encodeURIComponent(title.replaceAll(" ", "_"))}`;
 // The trivia recap on the end screen: a line from Wikipedia about each trivia question.
 const factsHTML = (facts) => !facts?.length ? "" : `<h2 class="display" style="text-align:center;margin:0">📚 Trivia recap</h2>
   <div class="facts">${facts.map((f) => `<div class="fact"><small class="muted">${esc(f.q)}</small><b>✅ ${esc(f.a)}</b><p>${esc(f.text)}</p>
-    <a href="https://en.wikipedia.org/wiki/${encodeURIComponent(f.title.replaceAll(" ", "_"))}" target="_blank" rel="noopener">Wikipedia: ${esc(f.title)} ↗</a></div>`).join("")}</div>`;
+    <a href="${wikiURL(f.title)}" target="_blank" rel="noopener">Wikipedia: ${esc(f.title)} ↗</a></div>`).join("")}</div>`;
 
 function playerRevealHTML(s) {
   const me = s.me, r = s.result || { delta: 0, correct: null, note: "" }, k = s.q?.kind;
@@ -1587,6 +1590,7 @@ function playerRevealHTML(s) {
     ${s.headline ? `<p class="phead">${esc(s.headline)}</p>` : ""}
     ${s.q && !answer ? `<p class="qtext small" style="margin:0">${esc(s.q.text)}</p>` : ""}
     ${answer ? `<p class="panswer">${answer}</p>` : ""}
+    ${s.fact ? `<p class="pfact">📚 ${esc(s.fact.text)} <a href="${wikiURL(s.fact.title)}" target="_blank" rel="noopener">Wikipedia ↗</a></p>` : ""}
     <div class="rv2"><div class="olist">${what}</div><div class="pboard ${list.length > 8 ? "dense" : ""}"><div class="board-title">Standings</div>${list.map(standing).join("")}</div></div>
     ${role === "player" ? `<p class="muted" style="text-align:center;margin:0">⏳ Next round when the host is ready</p>` : ""}
     ${perfChipHTML(s)}

@@ -264,7 +264,7 @@ function cleanSettings(raw: unknown, prev: Settings): Settings {
 }
 
 // Bump together with BUILD in public/index.html: pages with an older BUILD ask to be refreshed.
-const VERSION = "2026-10-30.20";
+const VERSION = "2026-10-30.21";
 const SPIN_MS = 6500;
 const INTRO_MS = 5000;
 const FREEZE_MS = 5000;
@@ -1455,7 +1455,8 @@ export class Room extends DurableObject<Env> {
     wikiFact(q.text, a, yesNo).then((f) => {
       if (!f || game !== this.game) return;
       this.facts.push({ qi, q: q.text, a, ...f });
-      if (this.phase === "end") this.broadcast(); // the last question's lookup can finish after the podium
+      // A slow lookup can land after its reveal has started, or after the podium.
+      if (this.phase === "end" || (this.phase === "reveal" && this.qi === qi)) this.broadcast();
     }).catch(() => {});
   }
 
@@ -1477,6 +1478,7 @@ export class Room extends DurableObject<Env> {
       now: Date.now(),
       wheelOn: this.wheelOn(),
       facts: this.phase === "end" ? [...this.facts].sort((x, y) => x.qi - y.qi) : [],
+      fact: this.phase === "reveal" ? this.facts.find((f) => f.qi === this.qi) ?? null : null,
       ver: VERSION,
     };
   }
