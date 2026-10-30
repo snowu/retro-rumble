@@ -6,7 +6,7 @@ Chaotic multiplayer quiz for sprint retros. Everyone plays from their own phone 
 
 - 🎡 A chaos wheel before every question: Double Trouble, Speed Demon, Minefield, Heist, Jackpot, Contrarian, Opposite Day, and a once-a-game Robin Hood that swaps first and last place
 - 🎨 Draw rounds: a random player draws a secret word on their phone, everyone else types guesses; letters get revealed as time runs out. Undo takes back strokes and clears
-- 🎤 Perform it: an opted-in volunteer hums and mimes a song or movie on the call, everyone else guesses (with an optional 30s preview clip from Apple Music for the performer)
+- 🎤 Perform it: an opted-in volunteer hums a song, or a movie's theme, with gestures on the call; everyone else guesses the song or the movie (with an optional 30s preview clip from Apple Music for the performer)
 - 🖌️ Draw-offs: two players draw the same word at once, the room votes for the best one
 - 📏 Closest wins: number questions on fixed, checkable facts; nearest guess takes the points
 - 🔥 Hot takes: agree or disagree, then guess what % of the team agrees
@@ -22,6 +22,8 @@ Two host modes, picked in the lobby:
 
 - 🎮 **Play along**: the host plays too, by clicking the answer cards. Every game pulls fresh trivia, adds a few built-in trick questions and team votes.
 - 🎛️ **Game master**: the host doesn't answer but controls everything: questions, answer time, which wheel modifiers are on, power-ups. During the game a **Control panel** (separate window, so answers never hit the shared screen) can queue or remove questions, change settings, reveal early, skip or end the game.
+
+To test big rooms, the lobby has 🤖 bot buttons: bots join as players, answer at random moments in every round, and never draw or perform unless nobody else can.
 
 Game master questions are written in the lobby:
 

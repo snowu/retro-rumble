@@ -86,6 +86,8 @@ input:focus, textarea:focus { outline: none; border-color: var(--cyan); }
 .qedit summary { cursor: pointer; color: var(--muted); }
 .qedit textarea { margin-top: 10px; min-height: 260px; font-family: ui-monospace, monospace, "Noto Color Emoji"; font-size: .9rem; }
 .qedit .help { font-size: .85rem; margin-top: 6px; }
+.botrow { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
+.botrow button { font-size: .85rem; padding: 6px 12px; }
 .lobby-actions { display: flex; justify-content: center; align-items: center; gap: 14px; flex-wrap: wrap; }
 .host-foot { align-items: center; }
 
@@ -599,7 +601,7 @@ draw:
 # "drawoff:" = two players draw the same word, everyone votes for the best one.
 drawoff:
 
-# "perform:" = a volunteer hums and mimes a song or movie on the call. Leave empty for a random one.
+# "perform:" = a volunteer hums and mimes a song or a movie's theme on the call. Leave empty for a random one.
 perform:
 
 # "closest: question = number" = closest guess wins. Stick to facts you've checked.
@@ -658,7 +660,7 @@ const params = new URLSearchParams(location.search);
 const API = location.hostname.endsWith("github.io") ? "https://retro-rumble.zancato-t.workers.dev" : location.origin;
 
 // Must match VERSION in src/index.ts. GitHub Pages caches the page for ~10 minutes, so an old tab can outlive a deploy.
-const BUILD = "2026-10-30.22";
+const BUILD = "2026-10-30.23";
 let endTimer = 0, avOpen = false; // avOpen: the lobby avatar picker stays open across re-renders
 let ws = null, role = null, room = null, state = null, offset = 0, lastKey = "", seenPlayers = new Set();
 let mine = null, mineState = null; // the host's own player seat in Play-along mode
@@ -963,7 +965,7 @@ function introHTML(s) {
   const d = s.draw, [a, b] = s.artists || [];
   const who = (p) => p ? `<b>${p.emoji} ${esc(p.name)}</b>` : "someone";
   const info = {
-    perform: ["🎤", `${d ? `<b>${d.drawerEmoji} ${esc(d.drawerName)}</b>` : "A volunteer"} performs a ${d?.secretType || "song or movie"}: hum it, mime it, no words. Everyone else guesses, so watch the call!`],
+    perform: ["🎤", `${d ? `<b>${d.drawerEmoji} ${esc(d.drawerName)}</b>` : "A volunteer"} hums a song or a movie theme, with gestures and no words. Guess the song title, or the movie for a theme. Watch the call!`],
     draw: ["🎨", `${d ? `<b>${d.drawerEmoji} ${esc(d.drawerName)}</b>` : "Someone"} draws a secret word. Everyone else types guesses, fastest gets the most.`],
     drawoff: ["🖌️", `${who(a)} vs ${who(b)}. Same word, two drawings, and the room picks the winner.`],
     closest: ["📏", "A number question. Type your best guess, closest wins."],
@@ -1159,7 +1161,8 @@ function renderHost(fresh) {
               <div class="roomcode">${esc(s.code)}</div>
               <button class="ghost" data-invite>🔗 Copy invite link</button>
             </div>
-            <div class="roster"><h2 id="pcount"></h2><div class="bubbles" id="bubbles"></div></div>
+            <div class="roster"><h2 id="pcount"></h2><div class="bubbles" id="bubbles"></div>
+              <div class="botrow" title="Test players that answer on their own"><button class="ghost" data-bots="1">🤖 +1 bot</button><button class="ghost" data-bots="5">🤖 +5 bots</button><button class="ghost" id="rmbots">Remove bots</button></div></div>
           </div>
           <div class="modes">
             <button class="modecard" data-mode="play"><b>🎮 Play along</b><span class="muted">You play too, from this screen. Fresh trivia every game, a few trick questions and team votes. No peeking.</span></button>
@@ -1229,6 +1232,8 @@ function renderHost(fresh) {
         $("#hostperf").classList.toggle("on", on);
         $("#hostperf").innerHTML = perfText(on, "Click");
       };
+      document.querySelectorAll("[data-bots]").forEach((b) => (b.onclick = () => sendMsg({ t: "addBots", n: +b.dataset.bots })));
+      $("#rmbots").onclick = () => sendMsg({ t: "removeBots" });
       $("#hostperf").onclick = () => { store.set("rr-hostperform", store.get("rr-hostperform") === "1" ? "" : "1"); perfLabel(); };
       perfLabel();
       $("#start").onclick = () => {
@@ -1248,7 +1253,9 @@ function renderHost(fresh) {
     const n = s.players.length, mode = lobbyMode();
     document.querySelectorAll(".modecard").forEach((b) => b.classList.toggle("on", b.dataset.mode === mode));
     document.querySelectorAll(".modeopts").forEach((el) => (el.style.display = el.dataset.for === mode ? "" : "none"));
-    $("#pcount").textContent = n ? `${n} player${n > 1 ? "s" : ""} in` : "Waiting for players…";
+    const bots = s.players.filter((p) => p.bot).length;
+    $("#pcount").textContent = n ? `${n} player${n > 1 ? "s" : ""} in${bots ? ` (${bots} bot${bots > 1 ? "s" : ""})` : ""}` : "Waiting for players…";
+    $("#rmbots").style.display = bots ? "" : "none";
     $("#bubbles").innerHTML = s.players.map((p) => `<div class="bubble ${p.connected ? "" : "off"}"><span class="av" style="animation-delay:-${Math.random() * 2}s">${p.emoji}</span>${esc(p.name)}${p.performer ? `<span class="mic" title="Happy to perform">🎤</span>` : ""}</div>`).join("");
     if (s.players.some((p) => !seenPlayers.has(p.id))) sfx.join();
     seenPlayers = new Set(s.players.map((p) => p.id));
@@ -1304,7 +1311,7 @@ function renderHost(fresh) {
           <div class="stage">
             <div class="intro-emoji pop">🎤</div>
             <div class="star pop"><b>${d.drawerEmoji} ${esc(d.drawerName)}</b> is performing</div>
-            <div class="type">${d.secretType === "movie" ? "🎬 It's a movie" : d.secretType === "song" ? "🎵 It's a song" : "🎵🎬 Song or movie"} · hum it, mime it, no words</div>
+            <div class="type">${PERF_TYPE[d.secretType]?.[1] ?? PERF_TYPE[""][1]} · hum + gestures, no words</div>
             <div class="dhint" id="hhint"></div>
           </div>
           <div class="timer"><div class="timer-fill"></div><span class="timer-num"></span></div>
@@ -1539,7 +1546,7 @@ const meHead = (s) => `<div class="me"><span class="av">${s.me.emoji}</span>${es
 // Perform it is opt-in, so the invite is loud in the lobby and stays one tap away between rounds.
 const perfText = (on, verb) => on
   ? `🎤 You're in the performer pool!<small>${verb} to opt out</small>`
-  : `🎤 Up for Perform it? Hum or mime a song or movie on the call while everyone guesses<small>${verb} to opt in, you can still pass on one you don't know</small>`;
+  : `🎤 Up for Perform it? Hum a song or a movie theme on the call while everyone guesses<small>${verb} to opt in, you can still pass on one you don't know</small>`;
 const perfBtnHTML = (on, verb) => `<button class="perfbtn ${on ? "on" : ""}" id="perfbtn">${perfText(on, verb)}</button>`;
 const perfChipHTML = (s) => s.mode !== "play" ? ""
   : `<button class="perfchip ${s.me.performer ? "on" : ""}" id="perfbtn">${s.me.performer ? "🎤 You're a performer · opt out" : "🎤 Want a turn performing? Opt in"}</button>`;
@@ -1736,23 +1743,29 @@ async function playSnippet(term) {
   info.innerHTML = `Preview: ${esc(hit.track)} · ${esc(hit.artist)} · <a href="${esc(hit.link)}" target="_blank" rel="noopener" style="color:var(--muted)">Apple Music ↗</a>`;
 }
 
+// What each kind of secret is called: [the star's card, everyone else's label, the guess box].
+const PERF_TYPE = {
+  song: ["🎵 Hum this song:", "🎵 guess the song", "Song title…"],
+  movie: ["🎬 Hum the theme from this movie:", "🎬 a movie theme: guess the movie", "Movie title…"],
+  "": ["🎵 Hum this:", "🎵🎬 guess the song or movie", "Song or movie title…"],
+};
 // Perform it: the star sees the secret and a pass button, everyone else gets the guess box.
 function renderPerformPlayer() {
   const s = P(), me = s.me, d = s.draw, star = me.id === d.drawerId;
-  const key = `${s.qi}|${d.drawerId}|${star ? s.q.text : ""}`;
+  const key = `${s.qi}|${d.drawerId}|${d.secretType}|${star ? s.q.text : ""}`; // a pass can switch song ↔ movie
   if (!$("#perfroot") || $("#perfroot").dataset.key !== key) {
     stopSnippet();
-    const type = d.secretType === "movie" ? "🎬 a movie" : d.secretType === "song" ? "🎵 a song" : "🎵🎬 a song or movie";
+    const [mine, theirs, box] = PERF_TYPE[d.secretType] ?? PERF_TYPE[""];
     app.innerHTML = `<div class="phone" id="perfroot" data-key="${esc(key)}">
       <div id="dhead"></div>
       ${modBadge(s.mod)}
       ${star
-        ? `<div class="secret"><span class="muted">You're performing ${type}:</span><b>${esc(s.q.text)}</b><small class="muted">only you can see this</small></div>
+        ? `<div class="secret"><span class="muted">${mine}</span><b>${esc(s.q.text)}</b>${s.tune ? `<span>${esc(s.tune)}</span>` : ""}<small class="muted">only you can see this</small></div>
            <div class="timer"><div class="timer-fill"></div><span class="timer-num"></span></div>
            <div class="rules"><span>🎵 Hum the tune · 🙌 mime and gesture</span><span>🚫 No words, no lyrics, no spelling it out</span></div>
            <div class="rules"><button class="ghost" id="snipbtn">🎧 Hear a snippet first (headphones on!)</button><small id="snipinfo"></small></div>
            <button class="ghost" id="passbtn" ${d.passesLeft > 0 ? "" : "disabled"}>🙈 Pass (don't know it)</button>`
-        : `<div class="dwho" style="text-align:center">🎤 ${d.drawerEmoji} <b>${esc(d.drawerName)}</b> is performing ${type}</div>
+        : `<div class="dwho" style="text-align:center">🎤 ${d.drawerEmoji} <b>${esc(d.drawerName)}</b> is performing · ${theirs}</div>
            <p class="muted" style="text-align:center;margin:0">Watch the call! Hum + gestures, no words.</p>
            <div class="dhint" id="dhint" style="text-align:center"></div>
            <div class="timer"><div class="timer-fill"></div><span class="timer-num"></span></div>
@@ -1770,7 +1783,7 @@ function renderPerformPlayer() {
     const got = me.answer !== null, frozen = serverNow() < me.frozenUntil;
     if (got) $("#gbox").innerHTML = `<h2 class="display up" style="text-align:center;margin:0">✅ Got it!</h2>`;
     else if (!$("#ginput")) {
-      $("#gbox").innerHTML = `<form class="gform" id="gform"><input id="ginput" maxlength="40" autocomplete="off" autocapitalize="off" placeholder="Song or movie title…"><button>Guess</button></form>`;
+      $("#gbox").innerHTML = `<form class="gform" id="gform"><input id="ginput" maxlength="40" autocomplete="off" autocapitalize="off" placeholder="${(PERF_TYPE[s.draw.secretType] ?? PERF_TYPE[""])[2]}"><button>Guess</button></form>`;
       $("#gform").onsubmit = (e) => { e.preventDefault(); sendGuess($("#ginput"), psend); };
     }
     if ($("#ginput")) $("#ginput").disabled = frozen;
@@ -1951,7 +1964,7 @@ const EDIT_HINTS = {
   vote: ["Who is most likely to…", "Everyone votes for a teammate. The majority pick scores."],
   draw: ["Word to draw (empty = random)", "A random player draws it on their phone, everyone else types guesses."],
   drawoff: ["Word to draw (empty = random)", "Two players draw the same word at once, everyone else votes for the best."],
-  perform: ["Song or movie (empty = random)", "A volunteer hums and mimes it on the call, everyone else guesses. Only players who opted in get picked."],
+  perform: ["Song or movie title (empty = random)", "A volunteer hums it (a movie by its theme) with gestures on the call, everyone else guesses. Only players who opted in get picked."],
   closest: ["A question with a number answer", "Closest guess wins. Only use facts you've checked."],
   hottake: ["A spicy statement", "Agree or disagree, then guess what % of the team agrees."],
   write: ["A prompt, e.g. your first job", "Everyone writes an answer, then the room guesses who wrote what."],
@@ -2177,7 +2190,7 @@ function renderPanel() {
 }
 
 /* ---------- per-frame: timer bar, last-seconds ticks, unfreeze ---------- */
-(function loop() {
+function frameTick() {
   if (state && state.phase === "question") {
     const left = Math.max(0, state.deadline - serverNow());
     const k = left / state.duration;
@@ -2196,8 +2209,11 @@ function renderPanel() {
       if (!!$(".frozen") !== f > 0 || !!$(".fog") !== fogged) render();
     }
   }
-  requestAnimationFrame(loop);
-})();
+}
+(function loop() { frameTick(); requestAnimationFrame(loop); })();
+// Animation frames stop in a background tab (say, while you're on the call), so a timer keeps
+// the clock ticking there. A tab that's playing sound isn't throttled, so the ticks stay on time.
+setInterval(() => document.hidden && frameTick(), 250);
 
 /* ---------- boot ---------- */
 if (params.get("host") && store.get("rr-host-" + params.get("host").toUpperCase())) {
