@@ -243,7 +243,10 @@ const WRITE_PROMPTS = [
   "The worst bug you ever shipped", "Your most-used emoji", "The first concert you went to", "A weird food combo you secretly love",
   "Your go-to karaoke song", "Your very first job", "The app you'd delete from everyone's phone", "Your guilty-pleasure TV show",
   "A skill nobody here knows you have", "Your most controversial coffee opinion", "The best thing that happened this sprint",
-  "Your dream retirement, in one sentence",
+  "Your dream retirement, in one sentence", "What you wanted to be as a kid", "The weirdest job you've ever had",
+  "Something you're irrationally scared of", "Your most useless talent", "The last thing you googled (be honest)",
+  "A hill you will die on", "Your go-to excuse for being late", "The weirdest thing in your fridge right now",
+  "Your celebrity lookalike, according to someone else", "A food you refuse to eat",
 ];
 const FOG_MS = 6000;
 
@@ -261,7 +264,7 @@ function cleanSettings(raw: unknown, prev: Settings): Settings {
 }
 
 // Bump together with BUILD in public/index.html: pages with an older BUILD ask to be refreshed.
-const VERSION = "2026-10-30.17";
+const VERSION = "2026-10-30.18";
 const SPIN_MS = 6500;
 const INTRO_MS = 5000;
 const FREEZE_MS = 5000;
@@ -1443,6 +1446,8 @@ export class Room extends DurableObject<Env> {
         : null,
       artists: this.artistsView(),
       benched: this.bench().has(p.id),
+      // Who has locked in this question, as a row of avatars that light up.
+      lineup: this.phase === "question" ? [...this.players.values()].filter((o) => o.ws && !this.bench().has(o.id)).map((o) => ({ emoji: o.emoji, name: o.name, done: o.answer !== null })) : [],
       mine: { num: p.num, pct: p.pct, text: p.text },
       info: this.phase === "reveal" ? r?.info ?? null : null,
       draw: this.drawView(),

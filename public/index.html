@@ -433,6 +433,9 @@ body.drawing #toasts { top: 12px; bottom: auto; } /* keep toasts off the palette
 .perfbtn { border-radius: 14px; padding: 14px 18px; font-weight: 800; background: var(--surface); border: 2px dashed var(--line); color: var(--muted); }
 .perfbtn.on { border: 2px solid var(--yellow); color: var(--ink); background: #ffd23f1a; }
 .bubble .mic { font-size: 1rem; }
+.lineup { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; }
+.lineup span { width: 42px; height: 42px; display: grid; place-items: center; font-size: 1.5rem; border-radius: 50%; border: 2px solid var(--line); opacity: .35; filter: grayscale(.6); transition: all .25s; }
+.lineup span.done { opacity: 1; filter: none; border-color: var(--green); box-shadow: 0 0 12px #3ef08a55; animation: pop .35s cubic-bezier(.2, 1.6, .4, 1); }
 .avpick { display: flex; flex-wrap: wrap; justify-content: center; gap: 4px; }
 .avpick button { width: 46px; height: 46px; display: grid; place-items: center; font-size: 28px; line-height: 1; padding: 0; border-radius: 50%; background: none; border: 2px solid transparent; transition: transform .1s, background .1s; }
 .avpick button:hover { background: #ffffff12; transform: scale(1.15); }
@@ -644,7 +647,7 @@ const params = new URLSearchParams(location.search);
 const API = location.hostname.endsWith("github.io") ? "https://retro-rumble.zancato-t.workers.dev" : location.origin;
 
 // Must match VERSION in src/index.ts. GitHub Pages caches the page for ~10 minutes, so an old tab can outlive a deploy.
-const BUILD = "2026-10-30.17";
+const BUILD = "2026-10-30.18";
 let endTimer = 0, avOpen = false; // avOpen: the lobby avatar picker stays open across re-renders
 let ws = null, role = null, room = null, state = null, offset = 0, lastKey = "", seenPlayers = new Set();
 let mine = null, mineState = null; // the host's own player seat in Play-along mode
@@ -1493,6 +1496,7 @@ function bindPowers() {
 }
 const reactsHTML = () => `<div class="reacts">${REACTIONS.map((e) => `<button data-e="${e}">${e}</button>`).join("")}</div>`;
 const bindReacts = () => document.querySelectorAll(".reacts button").forEach((b) => (b.onclick = () => psend({ t: "react", e: b.dataset.e })));
+const lineupHTML = (s) => s.lineup?.length ? `<div class="lineup">${s.lineup.map((p) => `<span class="${p.done ? "done" : ""}" title="${esc(p.name)}${p.done ? " · locked in" : ""}">${p.emoji}</span>`).join("")}</div>` : "";
 const meHead = (s) => `<div class="me"><span class="av">${s.me.emoji}</span>${esc(s.me.name)}${s.phase !== "lobby" ? `<span class="rank">#${s.me.rank} of ${s.playerCount}</span>` : ""}<span class="sc">${s.me.score}</span></div>`;
 
 // The player's reveal: your result up top, then two columns: what everyone answered
@@ -1619,6 +1623,7 @@ function renderInputPlayer() {
       <h2 class="qtext ${k === "hottake" ? "quote" : ""}">${esc(s.q.text)}</h2>
       <div class="timer"><div class="timer-fill"></div><span class="timer-num"></span></div>
       ${done ? locked : form}
+      <div id="ilineup"></div>
       <div id="ipowers"></div>
       <div id="ioverlay"></div>
     </div>${reactsHTML()}`;
@@ -1644,6 +1649,7 @@ function renderInputPlayer() {
     }
   }
   $("#ihead").innerHTML = meHead(s);
+  $("#ilineup").innerHTML = lineupHTML(s);
   const frozen = serverNow() < me.frozenUntil;
   document.querySelectorAll("#inroot input, #inroot textarea, #inroot form button, #tlock").forEach((el) => (el.disabled = frozen || (el.id === "tlock" && !el.dataset.ready)));
   $("#ipowers").innerHTML = s.benched ? "" : powersHTML(s, done);
@@ -1761,6 +1767,7 @@ function renderPlayer(fresh) {
         : `<div><div class="answers ${s.q.options.length > 4 ? "many" : ""}">
             ${s.q.options.map((o, pos) => s.q.kind === "who" && o.text === `${me.emoji} ${me.name}` ? "" : `<button class="answer ${fresh ? "pop" : ""}" data-i="${o.i}" style="${tileStyle(byPos ? pos : o.i)}"><span>${SHAPES[(byPos ? pos : o.i) % SHAPES.length]}</span><span>${s.q.kind === "quiz" ? esc(o.text) : esc(o.text).replace(" ", "&nbsp;") /* keep "🦊 Name" on one line */}</span>${pos < 9 ? `<kbd>${pos + 1}</kbd>` : ""}</button>`).join("")}
           </div></div>`}
+      ${lineupHTML(s)}
       ${powersHTML(s, answered)}
       ${overlaysHTML(me)}`;
   } else if (s.phase === "reveal") {
