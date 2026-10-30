@@ -261,12 +261,13 @@ function cleanSettings(raw: unknown, prev: Settings): Settings {
 }
 
 // Bump together with BUILD in public/index.html: pages with an older BUILD ask to be refreshed.
-const VERSION = "2026-10-30.6";
+const VERSION = "2026-10-30.8";
 const SPIN_MS = 6500;
 const INTRO_MS = 5000;
 const FREEZE_MS = 5000;
-const AVATARS = ["🦊", "🐸", "🐙", "🦄", "🐼", "🦖", "🐝", "🦉", "🐧", "🦀", "🐯", "🐨", "🦦", "🐳", "🦩", "🐲", "🦔", "🐌", "👾", "🤖"];
-const REACTIONS = ["🔥", "😂", "👏", "😱", "💀", "🎉", "🤡", "🧠", "🦀", "🦡", "🐍"];
+// Players can pick one (same list in public/index.html); otherwise they get a random free one.
+const AVATARS = ["🦊", "🐸", "🐙", "🦄", "🐼", "🦖", "🐝", "🦉", "🐧", "🦀", "🐯", "🐨", "🦦", "🐳", "🦩", "🐲", "🦔", "🐌", "👾", "🤖", "💃", "💅", "🥲"];
+const REACTIONS = ["🔥", "😂", "👏", "😱", "💀", "🎉", "🤡", "🧠", "🦀", "🦡", "🐍", "🍄"];
 
 const CODE_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ";
 const randomCode = () => Array.from({ length: 4 }, () => CODE_CHARS[Math.floor(Math.random() * CODE_CHARS.length)]).join("");
@@ -514,6 +515,7 @@ export class Room extends DurableObject<Env> {
 
     const id = (url.searchParams.get("pid") ?? "").slice(0, 64);
     const name = (url.searchParams.get("name") ?? "").trim().slice(0, 16);
+    const chosen = AVATARS.includes(url.searchParams.get("emoji") ?? "") ? url.searchParams.get("emoji")! : "";
     if (!id || !name) {
       server.close(4000, "missing name");
       return new Response(null, { status: 101, webSocket: client });
@@ -523,11 +525,12 @@ export class Room extends DurableObject<Env> {
       try { p.ws?.close(4001, "replaced"); } catch {}
       p.ws = server;
       p.name = name;
+      if (chosen) p.emoji = chosen;
     } else {
       const used = new Set([...this.players.values()].map((o) => o.emoji));
       p = {
         id, name, ws: server,
-        emoji: pick(AVATARS.filter((a) => !used.has(a)).concat(used.size >= AVATARS.length ? AVATARS : [])),
+        emoji: chosen || pick(AVATARS.filter((a) => !used.has(a)).concat(used.size >= AVATARS.length ? AVATARS : [])),
         score: 0, streak: 0, answer: null, answeredAt: 0, perm: null,
         allInUsed: false, allInActive: false, prank: pick(PRANKS), frozenUntil: 0, frozenBy: "",
         fogUntil: 0, fogBy: "", banana: false, swapPending: false, lastReact: 0, lastGuess: 0, num: 0, pct: 50, text: "", drawn: 0, performer: false, performed: 0, titles: [], stats: freshStats(),
@@ -714,6 +717,10 @@ export class Room extends DurableObject<Env> {
       if (this.phase !== "question" || k < 0 || !this.strokes.some((x) => x.id === id && x.a === k)) return;
       this.strokes = this.strokes.filter((x) => x.id !== id);
       this.toAllBut(p.id, { t: "inkUndo", id });
+    } else if (msg.t === "avatar") {
+      if (!AVATARS.includes(String(msg.e))) return;
+      p.emoji = String(msg.e);
+      this.broadcast();
     } else if (msg.t === "performer") {
       if (isHostSeat(p)) return;
       p.performer = !!msg.on;

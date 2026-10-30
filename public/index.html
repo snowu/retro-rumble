@@ -379,6 +379,12 @@ body.drawing #toasts { top: 12px; bottom: auto; } /* keep toasts off the palette
 .perfbtn { border-radius: 14px; padding: 14px 18px; font-weight: 800; background: var(--surface); border: 2px dashed var(--line); color: var(--muted); }
 .perfbtn.on { border: 2px solid var(--yellow); color: var(--ink); background: #ffd23f1a; }
 .bubble .mic { font-size: 1rem; }
+.avpick { display: grid; grid-template-columns: repeat(auto-fill, minmax(42px, 1fr)); gap: 6px; }
+.avpick button { font-size: 1.6rem; padding: 4px; border-radius: 12px; background: #0004; border: 2px solid transparent; }
+.avpick button.on { border-color: var(--yellow); background: #ffd23f22; }
+.avpick button:hover { background: var(--surface-2); }
+.myav { font-size: 5.5rem; line-height: 1; background: none; padding: 0; animation: wobble 2s infinite; }
+.avlabel { font-size: .85rem; color: var(--muted); margin: -4px 0 0; }
 .instr { text-align: center; color: var(--muted); font-size: clamp(1rem, 1.6vw, 1.3rem); margin: -6px 0 0; }
 .qprompt { text-align: center; color: var(--cyan); font-weight: 700; font-size: clamp(1rem, 1.8vw, 1.4rem); margin: 0; }
 .quote::before { content: "“"; } .quote::after { content: "”"; }
@@ -404,8 +410,8 @@ textarea.win { min-height: 110px; font-size: 1.1rem; }
 @media (max-width: 860px) { .reveal-draw { grid-template-columns: 1fr; } }
 .reacts button { font-size: 1.7rem; background: none; padding: 4px 6px; border-radius: 10px; }
 .reacts button:active { transform: scale(1.4); }
-/* 11 emotes: smaller on phones so the row fits */
-@media (max-width: 759px) { .reacts { gap: 0; padding-left: 4px; padding-right: 4px; } .reacts button { font-size: 1.3rem; padding: 4px 3px; flex: 1; max-width: 44px; } }
+/* 12 emotes: smaller on phones so the row fits */
+@media (max-width: 759px) { .reacts { gap: 0; padding-left: 4px; padding-right: 4px; } .reacts button { font-size: 1.25rem; padding: 4px 2px; flex: 1; max-width: 44px; } }
 </style>
 </head>
 <body>
@@ -558,7 +564,18 @@ vote: Who is most likely to still be on mute when it's their turn?
 
 const COLORS = ["#ff3d6e", "#2d8cff", "#ffb020", "#22c55e", "#a855f7", "#14b8a6", "#f97316", "#ec4899", "#84cc16", "#06b6d4"];
 const SHAPES = ["▲", "◆", "●", "■", "★", "✚", "⬟", "♥", "☀", "☾"];
-const REACTIONS = ["🔥", "😂", "👏", "😱", "💀", "🎉", "🤡", "🧠", "🦀", "🦡", "🐍"];
+const AVATARS = ["🦊", "🐸", "🐙", "🦄", "🐼", "🦖", "🐝", "🦉", "🐧", "🦀", "🐯", "🐨", "🦦", "🐳", "🦩", "🐲", "🦔", "🐌", "👾", "🤖", "💃", "💅", "🥲"];
+// Your pick, remembered on this browser. Empty = the server hands out a random free one.
+const myAvatar = () => (AVATARS.includes(store.get("rr-emoji")) ? store.get("rr-emoji") : "");
+const avatarPickerHTML = (cur) => `<div class="avpick">${AVATARS.map((a) => `<button type="button" data-av="${a}" class="${a === cur ? "on" : ""}">${a}</button>`).join("")}</div>`;
+function bindAvatarPicker(root, onPick) {
+  root.querySelectorAll("[data-av]").forEach((b) => (b.onclick = () => {
+    store.set("rr-emoji", b.dataset.av);
+    root.querySelectorAll("[data-av]").forEach((x) => x.classList.toggle("on", x === b));
+    onPick?.(b.dataset.av);
+  }));
+}
+const REACTIONS = ["🔥", "😂", "👏", "😱", "💀", "🎉", "🤡", "🧠", "🦀", "🦡", "🐍", "🍄"];
 
 const $ = (s) => document.querySelector(s);
 const app = $("#app");
@@ -572,8 +589,8 @@ const params = new URLSearchParams(location.search);
 const API = location.hostname.endsWith("github.io") ? "https://retro-rumble.zancato-t.workers.dev" : location.origin;
 
 // Must match VERSION in src/index.ts. GitHub Pages caches the page for ~10 minutes, so an old tab can outlive a deploy.
-const BUILD = "2026-10-30.6";
-let endTimer = 0;
+const BUILD = "2026-10-30.8";
+let endTimer = 0, avOpen = false; // avOpen: the lobby avatar picker stays open across re-renders
 let ws = null, role = null, room = null, state = null, offset = 0, lastKey = "", seenPlayers = new Set();
 let mine = null, mineState = null, mineFrozen = false; // the host's own player seat in Play-along mode
 const SECONDS = [15, 20, 30, 45, 60];
@@ -706,7 +723,7 @@ function connect() {
   const proto = api.protocol === "https:" ? "wss" : "ws";
   const q = role === "host" || role === "panel"
     ? `role=host&key=${encodeURIComponent(store.get("rr-host-" + room) || "")}`
-    : `role=player&pid=${encodeURIComponent(myId())}&name=${encodeURIComponent(store.get("rr-name") || "")}`;
+    : `role=player&pid=${encodeURIComponent(myId())}&name=${encodeURIComponent(store.get("rr-name") || "")}&emoji=${encodeURIComponent(myAvatar())}`;
   ws = new WebSocket(`${proto}://${api.host}/ws/${room}?${q}`);
   ws.onopen = () => { $("#conn").style.display = "none"; };
   ws.onmessage = (ev) => {
@@ -761,6 +778,8 @@ function landing() {
         <h2>Join a game</h2>
         <input id="code" maxlength="4" placeholder="CODE" autocomplete="off" value="${esc((params.get("room") || "").toUpperCase())}">
         <input id="name" maxlength="16" placeholder="Your name" autocomplete="off" value="${esc(store.get("rr-name") || "")}">
+        <p class="avlabel">Pick your avatar (or skip for a random one)</p>
+        ${avatarPickerHTML(myAvatar())}
         <button class="big">Jump in ▶</button>
       </form>
       <div class="card">
@@ -769,6 +788,7 @@ function landing() {
         <button class="ghost" id="host">🎡 Host a game</button>
       </div>
     </div>`;
+  bindAvatarPicker($("#join"));
   $("#join").onsubmit = (e) => {
     e.preventDefault();
     const code = $("#code").value.trim().toUpperCase(), name = $("#name").value.trim();
@@ -1007,6 +1027,8 @@ function renderHost(fresh) {
           </div>
           <div class="modeopts" data-for="play">
             <input class="hostname" id="hostname" maxlength="16" placeholder="Your player name" value="${esc(store.get("rr-name") || "")}">
+            <p class="avlabel">Your avatar</p>
+            <div id="hostav" style="max-width:520px">${avatarPickerHTML(myAvatar())}</div>
           </div>
           <div class="modeopts" data-for="gm">
             <div id="lobbySettings">${settingsHTML(settings, s.allMods)}</div>
@@ -1059,6 +1081,7 @@ function renderHost(fresh) {
       $("#lobbySettings").onchange = () => store.set("rr-settings", JSON.stringify(readSettings($("#lobbySettings"))));
       document.querySelectorAll(".modecard").forEach((b) => (b.onclick = () => { store.set("rr-mode", b.dataset.mode); renderHost(false); }));
       $("#hostname").oninput = () => renderHost(false);
+      bindAvatarPicker($("#hostav"), (e) => sendMine({ t: "avatar", e }));
       $("#start").onclick = () => {
         unlockAudio();
         if (lobbyMode() === "play") {
@@ -1560,7 +1583,8 @@ function renderPlayer(fresh) {
   let body = "";
 
   if (s.phase === "lobby") {
-    body = `<div class="center"><div class="huge pop" style="animation:wobble 2s infinite">${me.emoji}</div><h2 class="display pop">You're in!</h2>
+    body = `<div class="center"><button class="myav pop" id="myav" title="Change avatar">${me.emoji}</button><p class="avlabel">tap to change</p>
+      <div id="avbox" style="${avOpen ? "" : "display:none;"}width:100%">${avatarPickerHTML(me.emoji)}</div><h2 class="display pop">You're in!</h2>
       <p class="muted">Eyes on the shared screen. ${s.playerCount} player${s.playerCount > 1 ? "s" : ""} so far.</p>
       ${s.powerups ? `<p class="muted">🎲 <b>All-in</b> once per game, plus a prank card: ${PRANK_INFO[me.prank]?.[0] ?? "🃏"} <b>${esc(PRANK_INFO[me.prank]?.[1] ?? "a prank")}</b>. Used cards get refilled every few questions.</p>` : ""}
       <button class="perfbtn ${me.performer ? "on" : ""}" id="perfbtn">${me.performer ? "🎤 You're on the performer list. Tap to opt out" : "🎤 Happy to hum &amp; mime a song or movie on the call? Tap to opt in"}</button></div>`;
@@ -1616,6 +1640,10 @@ function renderPlayer(fresh) {
   bindReacts();
   bindPowers();
   $("#perfbtn") && ($("#perfbtn").onclick = () => sendMsg({ t: "performer", on: !me.performer }));
+  if ($("#myav")) {
+    $("#myav").onclick = () => { avOpen = !avOpen; $("#avbox").style.display = avOpen ? "" : "none"; };
+    bindAvatarPicker($("#avbox"), (e) => { avOpen = false; sendMsg({ t: "avatar", e }); });
+  }
   if ($(".frozen")) navigator.vibrate?.([80, 40, 80]);
   if (s.phase === "spin" && s.wheelOn) spinWheel(s);
   if (s.phase === "reveal" && fresh) navigator.vibrate?.(s.result?.delta > 0 ? 60 : [40, 60, 40]);
@@ -1838,7 +1866,7 @@ function connectMine(onFirstState) {
   const api = new URL(API), proto = api.protocol === "https:" ? "wss" : "ws";
   const pid = "host-" + (store.get("rr-host-" + room) || "").slice(0, 12);
   const name = store.get("rr-hostplayer-" + room) || "Host";
-  mine = new WebSocket(`${proto}://${api.host}/ws/${room}?role=player&pid=${encodeURIComponent(pid)}&name=${encodeURIComponent(name)}`);
+  mine = new WebSocket(`${proto}://${api.host}/ws/${room}?role=player&pid=${encodeURIComponent(pid)}&name=${encodeURIComponent(name)}&emoji=${encodeURIComponent(myAvatar())}`);
   mine.onmessage = (ev) => {
     const msg = JSON.parse(ev.data);
     if (msg.t !== "state") return; // events already arrive on the host socket
