@@ -261,12 +261,12 @@ function cleanSettings(raw: unknown, prev: Settings): Settings {
 }
 
 // Bump together with BUILD in public/index.html: pages with an older BUILD ask to be refreshed.
-const VERSION = "2026-10-30.5";
+const VERSION = "2026-10-30.6";
 const SPIN_MS = 6500;
 const INTRO_MS = 5000;
 const FREEZE_MS = 5000;
 const AVATARS = ["🦊", "🐸", "🐙", "🦄", "🐼", "🦖", "🐝", "🦉", "🐧", "🦀", "🐯", "🐨", "🦦", "🐳", "🦩", "🐲", "🦔", "🐌", "👾", "🤖"];
-const REACTIONS = ["🔥", "😂", "👏", "😱", "💀", "🎉", "🤡", "🧠"];
+const REACTIONS = ["🔥", "😂", "👏", "😱", "💀", "🎉", "🤡", "🧠", "🦀", "🦡", "🐍"];
 
 const CODE_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ";
 const randomCode = () => Array.from({ length: 4 }, () => CODE_CHARS[Math.floor(Math.random() * CODE_CHARS.length)]).join("");

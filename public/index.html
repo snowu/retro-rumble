@@ -404,6 +404,8 @@ textarea.win { min-height: 110px; font-size: 1.1rem; }
 @media (max-width: 860px) { .reveal-draw { grid-template-columns: 1fr; } }
 .reacts button { font-size: 1.7rem; background: none; padding: 4px 6px; border-radius: 10px; }
 .reacts button:active { transform: scale(1.4); }
+/* 11 emotes: smaller on phones so the row fits */
+@media (max-width: 759px) { .reacts { gap: 0; padding-left: 4px; padding-right: 4px; } .reacts button { font-size: 1.3rem; padding: 4px 3px; flex: 1; max-width: 44px; } }
 </style>
 </head>
 <body>
@@ -556,7 +558,7 @@ vote: Who is most likely to still be on mute when it's their turn?
 
 const COLORS = ["#ff3d6e", "#2d8cff", "#ffb020", "#22c55e", "#a855f7", "#14b8a6", "#f97316", "#ec4899", "#84cc16", "#06b6d4"];
 const SHAPES = ["▲", "◆", "●", "■", "★", "✚", "⬟", "♥", "☀", "☾"];
-const REACTIONS = ["🔥", "😂", "👏", "😱", "💀", "🎉", "🤡", "🧠"];
+const REACTIONS = ["🔥", "😂", "👏", "😱", "💀", "🎉", "🤡", "🧠", "🦀", "🦡", "🐍"];
 
 const $ = (s) => document.querySelector(s);
 const app = $("#app");
@@ -570,7 +572,7 @@ const params = new URLSearchParams(location.search);
 const API = location.hostname.endsWith("github.io") ? "https://retro-rumble.zancato-t.workers.dev" : location.origin;
 
 // Must match VERSION in src/index.ts. GitHub Pages caches the page for ~10 minutes, so an old tab can outlive a deploy.
-const BUILD = "2026-10-30.5";
+const BUILD = "2026-10-30.6";
 let endTimer = 0;
 let ws = null, role = null, room = null, state = null, offset = 0, lastKey = "", seenPlayers = new Set();
 let mine = null, mineState = null, mineFrozen = false; // the host's own player seat in Play-along mode
