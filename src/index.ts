@@ -262,7 +262,7 @@ function cleanSettings(raw: unknown, prev: Settings): Settings {
 }
 
 // Bump together with BUILD in public/index.html: pages with an older BUILD ask to be refreshed.
-const VERSION = "2026-10-30.10";
+const VERSION = "2026-10-30.13";
 const SPIN_MS = 6500;
 const INTRO_MS = 5000;
 const FREEZE_MS = 5000;
@@ -401,8 +401,8 @@ function playSet(builtin: Question[], trivia: Question[], asked: Set<string>): {
   const extra = dedupe(trivia, [...asked, ...classics.map((q) => q.text)]);
   const pool = extra.length >= 5 ? [...shuffle(extra), ...classics] : classics;
   const blank = (kind: Kind, text = ""): Question => ({ kind, text, options: [], correct: -1 });
-  const closest = fresh(CLOSEST, ([t]) => t, 2).map(([text, num]) => ({ ...blank("closest", text), num }));
-  const triviaLane = shuffle([...pool.slice(0, 6), ...closest]);
+  const closest = fresh(CLOSEST, ([t]) => t, 1).map(([text, num]) => ({ ...blank("closest", text), num }));
+  const triviaLane = shuffle([...pool.slice(0, 7), ...closest]); // one closest-wins per game is plenty
   const sillyLane = shuffle([
     ...fresh(builtin.filter((q) => q.kind === "vote"), (q) => q.text, 2),
     ...fresh(HOT_TAKES, (t) => t, 2).map((t) => blank("hottake", t)),
@@ -411,7 +411,7 @@ function playSet(builtin: Question[], trivia: Question[], asked: Set<string>): {
     blank("draw"),
     blank("drawoff"),
   ]);
-  return { list: triviaLane.flatMap((q, i) => (sillyLane[i] ? [q, sillyLane[i]] : [q])), spares: pool.slice(6, 9) };
+  return { list: triviaLane.flatMap((q, i) => (sillyLane[i] ? [q, sillyLane[i]] : [q])), spares: pool.slice(7, 10) };
 }
 
 // "Who is most likely to push to main?" becomes "most likely to push to main".
@@ -724,7 +724,6 @@ export class Room extends DurableObject<Env> {
       p.emoji = String(msg.e);
       this.broadcast();
     } else if (msg.t === "performer") {
-      if (isHostSeat(p)) return;
       p.performer = !!msg.on;
       this.broadcast();
     } else if (msg.t === "pass") {
@@ -927,9 +926,9 @@ export class Room extends DurableObject<Env> {
     }
   }
 
-  // Opted-in performers, whoever has gone least first. The host's seat would show the answer on the big screen.
+  // Opted-in performers, whoever has gone least first. The host's seat reads its secret in a separate window.
   private volunteers(): Player[] {
-    return shuffle([...this.players.values()].filter((p) => p.ws && p.performer && !isHostSeat(p))).sort((a, b) => a.performed - b.performed);
+    return shuffle([...this.players.values()].filter((p) => p.ws && p.performer)).sort((a, b) => a.performed - b.performed);
   }
 
   private pickSecret(q: Question, not: string[]) {

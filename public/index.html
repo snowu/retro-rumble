@@ -176,7 +176,7 @@ input:focus, textarea:focus { outline: none; border-color: var(--cyan); }
 .rest { color: var(--muted); }
 
 /* floating reactions + toasts */
-.float { position: fixed; bottom: -60px; font-size: 3rem; pointer-events: none; z-index: 10; animation: floatup 2.6s ease-out forwards; }
+.float { position: fixed; bottom: -60px; font-size: 3rem; pointer-events: none; z-index: 10; animation: floatup 5s ease-out forwards; }
 .stampede { position: fixed; left: -15vw; font-size: clamp(3rem, 8vw, 6rem); z-index: 25; pointer-events: none; animation: stampede 2s linear forwards; }
 @keyframes stampede { 0% { transform: translateX(0) rotate(-6deg); } 25% { transform: translateX(32vw) translateY(-14px) rotate(6deg); } 50% { transform: translateX(65vw) rotate(-6deg); } 75% { transform: translateX(98vw) translateY(-14px) rotate(6deg); } 100% { transform: translateX(130vw); } }
 .shroom { position: fixed; top: 35vh; font-size: clamp(5rem, 14vw, 10rem); z-index: 25; pointer-events: none; animation: shroom 1.4s cubic-bezier(.2, 1.6, .4, 1) forwards; }
@@ -187,7 +187,7 @@ input:focus, textarea:focus { outline: none; border-color: var(--cyan); }
 .snake small { font-weight: 800; font-size: 1.1rem; color: var(--ink); }
 @keyframes snakein { 0% { transform: translateX(-80vw) rotate(-20deg); } 25% { transform: translateX(0) rotate(8deg); } 35% { transform: rotate(-6deg); } 45% { transform: rotate(4deg); } 85% { transform: none; opacity: 1; } 100% { transform: translateX(80vw); opacity: 0; } }
 @keyframes snakebg { 0%, 85% { background: #0d082099; } 100% { background: transparent; opacity: 0; } }
-@keyframes floatup { to { transform: translateY(-85vh) rotate(var(--r)); opacity: 0; } }
+@keyframes floatup { 75% { opacity: 1; } to { transform: translateY(-85vh) rotate(var(--r)); opacity: 0; } }
 #toasts { position: fixed; bottom: 84px; left: 50%; transform: translateX(-50%); display: grid; gap: 8px; z-index: 20; width: min(92vw, 520px); }
 .toast { background: #120a26ee; border: 2px solid var(--cyan); border-radius: 14px; padding: 12px 16px; font-weight: 800; text-align: center; animation: pop .35s cubic-bezier(.2, 1.6, .4, 1) both; box-shadow: 0 0 24px #2de2e655; }
 #stale { position: fixed; top: 0; left: 0; right: 0; z-index: 40; display: none; background: var(--yellow); color: #120a26; font-weight: 800; text-align: center; padding: 8px 16px; }
@@ -600,7 +600,7 @@ const params = new URLSearchParams(location.search);
 const API = location.hostname.endsWith("github.io") ? "https://retro-rumble.zancato-t.workers.dev" : location.origin;
 
 // Must match VERSION in src/index.ts. GitHub Pages caches the page for ~10 minutes, so an old tab can outlive a deploy.
-const BUILD = "2026-10-30.10";
+const BUILD = "2026-10-30.13";
 let endTimer = 0, avOpen = false; // avOpen: the lobby avatar picker stays open across re-renders
 let ws = null, role = null, room = null, state = null, offset = 0, lastKey = "", seenPlayers = new Set();
 let mine = null, mineState = null, mineFrozen = false; // the host's own player seat in Play-along mode
@@ -700,7 +700,7 @@ function floatReact(e) {
   el.style.left = 5 + Math.random() * 90 + "vw";
   el.style.setProperty("--r", (Math.random() * 80 - 40) + "deg");
   document.body.append(el);
-  setTimeout(() => el.remove(), 2700);
+  setTimeout(() => el.remove(), 5100);
 }
 // The badger meme: a stampede of badgers, a couple of mushrooms, then one enormous snake.
 function badgerCombo({ name, emoji }) {
@@ -793,6 +793,7 @@ function connect() {
   };
 }
 const sendMsg = (m) => ws?.readyState === 1 && ws.send(JSON.stringify(m));
+const sessionGet = (k) => { try { return sessionStorage.getItem(k); } catch { return null; } };
 function myId() {
   // Per tab, so several tabs on one PC are separate players (a reload keeps the same one).
   let id = null;
@@ -832,6 +833,7 @@ function landing() {
     if (!/^[A-Z]{4}$/.test(code)) return toast("Room codes are 4 letters");
     if (!name) return toast("Pick a name");
     store.set("rr-name", name);
+    try { sessionStorage.setItem("rr-joined", code); } catch {}
     room = code; role = "player";
     history.replaceState(null, "", `?room=${code}`);
     connect();
@@ -1060,12 +1062,13 @@ function renderHost(fresh) {
           </div>
           <div class="modes">
             <button class="modecard" data-mode="play"><b>🎮 Play along</b><span class="muted">You play too, from this screen. Fresh trivia every game, a few trick questions and team votes. No peeking.</span></button>
-            <button class="modecard" data-mode="gm"><b>🎛️ Game master</b><span class="muted">You run the show: your questions, your rules. Queue questions, skip or end from the control panel.</span></button>
+            <button class="modecard" data-mode="gm"><b>🎛️ Game master</b><span class="muted">You run the show: your questions, your rules. Queue questions or end the game from the control panel.</span></button>
           </div>
           <div class="modeopts" data-for="play">
             <input class="hostname" id="hostname" maxlength="16" placeholder="Your player name" value="${esc(store.get("rr-name") || "")}">
             <p class="avlabel">Your avatar</p>
             <div id="hostav" style="max-width:520px">${avatarPickerHTML(myAvatar())}</div>
+            <button class="perfbtn" id="hostperf" style="max-width:520px"></button>
           </div>
           <div class="modeopts" data-for="gm">
             <div id="lobbySettings">${settingsHTML(settings, s.allMods)}</div>
@@ -1090,7 +1093,8 @@ function renderHost(fresh) {
           <div class="lobby-actions"><button class="big" id="start">Let's rumble ▸</button></div>
           <p class="credit muted">Trivia from <a href="https://opentdb.com" target="_blank" rel="noopener">Open Trivia DB</a>, licensed <a href="https://creativecommons.org/licenses/by-sa/4.0/" target="_blank" rel="noopener">CC BY-SA 4.0</a></p>
         </div>`;
-      try { new QRCode($("#qr"), { text: joinUrl, width: 190, height: 190, colorDark: "#0d0820", colorLight: "#ffffff" }); } catch { $("#qr").remove(); }
+      // Low error correction = big, few modules: scannable even through a blurry video-call screen share.
+      try { new QRCode($("#qr"), { text: joinUrl, width: 260, height: 260, colorDark: "#000000", colorLight: "#ffffff", correctLevel: QRCode.CorrectLevel.L }); } catch { $("#qr").remove(); }
       let model = null;
       try { model = JSON.parse(store.get("rr-qmodel")); } catch {}
       if (!Array.isArray(model)) model = parseQs(store.get("rr-questions") || DEFAULT_QUESTIONS);
@@ -1119,6 +1123,13 @@ function renderHost(fresh) {
       document.querySelectorAll(".modecard").forEach((b) => (b.onclick = () => { store.set("rr-mode", b.dataset.mode); renderHost(false); }));
       $("#hostname").oninput = () => renderHost(false);
       bindAvatarPicker($("#hostav"), (e) => sendMine({ t: "avatar", e }));
+      const perfLabel = () => {
+        const on = store.get("rr-hostperform") === "1";
+        $("#hostperf").classList.toggle("on", on);
+        $("#hostperf").innerHTML = on ? "🎤 You're on the performer list. Click to opt out" : "🎤 Happy to hum &amp; mime a song or movie too? Click to opt in";
+      };
+      $("#hostperf").onclick = () => { store.set("rr-hostperform", store.get("rr-hostperform") === "1" ? "" : "1"); perfLabel(); };
+      perfLabel();
       $("#start").onclick = () => {
         unlockAudio();
         if (lobbyMode() === "play") {
@@ -1171,9 +1182,8 @@ function renderHost(fresh) {
           <div class="timer"><div class="timer-fill"></div><span class="timer-num"></span></div>
           ${k === "drawoff" ? duoHTML(s) : ""}
           <div class="live" id="live"></div>
-          <div class="host-foot"><button class="ghost" id="skip">${k === "write" ? "Done writing ⏭" : "Reveal now ⏭"}</button></div>
+          <div class="host-foot"></div>
         </div>`;
-      $("#skip").onclick = () => sendMsg({ t: "skip" });
       paintSoon();
     }
     if (s.q.kind !== "drawoff") {
@@ -1198,9 +1208,8 @@ function renderHost(fresh) {
           </div>
           <div class="timer"><div class="timer-fill"></div><span class="timer-num"></span></div>
           <div class="stage"><div class="feed" id="hfeed"></div><div class="live" id="live"></div></div>
-          <div class="host-foot"><button class="ghost" id="skip">Reveal now ⏭</button></div>
+          <div class="host-foot"></div>
         </div>`;
-      $("#skip").onclick = () => sendMsg({ t: "skip" });
     }
     $("#hhint").textContent = d.hint;
     $("#hfeed").innerHTML = feedHTML(s.feed);
@@ -1226,9 +1235,8 @@ function renderHost(fresh) {
               <div class="live" id="live"></div>
             </div>
           </div>
-          <div class="host-foot"><button class="ghost" id="skip">Reveal now ⏭</button></div>
+          <div class="host-foot"></div>
         </div>`;
-      $("#skip").onclick = () => sendMsg({ t: "skip" });
       paintSoon();
     }
     $("#hhint").textContent = d.hint;
@@ -1254,9 +1262,8 @@ function renderHost(fresh) {
             ${s.q.options.map((o, i) => `<div class="tile pop" data-i="${i}" style="${colorVar(i)}">${shapeChip(i)}${esc(o)}</div>`).join("")}
           </div></div>
           <div class="live" id="live"></div>
-          <div class="host-foot"><button class="ghost" id="skip">Reveal now ⏭</button></div>
+          <div class="host-foot"></div>
         </div>`;
-      $("#skip").onclick = () => sendMsg({ t: "skip" });
       paintSoon();
       // Play along: the host answers by clicking the cards themselves.
       document.querySelectorAll(".tile[data-i]").forEach((t) => (t.onclick = () => {
@@ -1561,6 +1568,32 @@ async function playSnippet(term) {
   snippet.play().catch(() => {});
   btn.textContent = "⏹ Stop snippet";
   info.innerHTML = `Preview: ${esc(hit.track)} · ${esc(hit.artist)} · <a href="${esc(hit.link)}" target="_blank" rel="noopener" style="color:var(--muted)">Apple Music ↗</a>`;
+}
+
+// The host's secret window: a plain popup, so it stays off a shared tab or window.
+let secretWin = null;
+function openSecret(s) {
+  const type = s.draw.secretType === "movie" ? "🎬 a movie" : s.draw.secretType === "song" ? "🎵 a song" : "🎵🎬 a song or movie";
+  secretWin = window.open("", "rr-secret", "width=440,height=560");
+  if (!secretWin) return toast("Allow pop-ups to see your secret");
+  const d = secretWin.document;
+  d.open();
+  d.write(`<!doctype html><meta charset="utf-8"><title>🤫 Your secret</title>
+    <link href="https://fonts.googleapis.com/css2?family=Bungee&family=Inter:wght@400;700&family=Noto+Color+Emoji&display=swap" rel="stylesheet">
+    <body style="margin:0;background:#0d0820;color:#f6f1ff;font-family:Inter,'Noto Color Emoji',sans-serif;display:grid;place-items:center;min-height:100vh;text-align:center;padding:20px;box-sizing:border-box">
+    <div style="display:grid;gap:14px;max-width:380px">
+      <div style="color:#a99cc9">You're performing ${type}:</div>
+      <div style="font-family:Bungee,'Noto Color Emoji',sans-serif;font-size:2.2rem;color:#ffd23f;line-height:1.1">${esc(s.q.text)}</div>
+      <div style="color:#a99cc9;font-weight:700">🎵 Hum the tune · 🙌 mime and gesture<br>🚫 No words, no lyrics</div>
+      <div id="snip" style="color:#a99cc9">🎧 Looking for a snippet…</div>
+      <small style="color:#a99cc9">Keep this window out of the screen share.</small>
+    </div></body>`);
+  d.close();
+  findPreview(s.preview).then((hit) => {
+    const el = d.getElementById("snip");
+    if (!el) return;
+    el.innerHTML = hit?.url ? `<audio controls src="${esc(hit.url)}" style="width:100%"></audio><br><small>${esc(hit.track)} · ${esc(hit.artist)}</small>` : "🎧 No snippet this time";
+  });
 }
 
 // Perform it: the star sees the secret and a pass button, everyone else gets the guess box.
@@ -1910,6 +1943,8 @@ function connectMine(onFirstState) {
     mineState = msg;
     document.body.classList.add("playing");
     renderMine();
+    const wantPerform = store.get("rr-hostperform") === "1";
+    if (msg.me.performer !== wantPerform) sendMine({ t: "performer", on: wantPerform }); // the lobby toggle, applied once the seat exists
     if (onFirstState) { const f = onFirstState; onFirstState = null; f(); }
   };
   mine.onclose = (ev) => {
@@ -1930,6 +1965,21 @@ function renderMine() {
   const who = `<span class="who">${me.emoji} ${esc(me.name)} · ${me.score}</span>`;
   mineFrozen = s.phase === "question" && serverNow() < me.frozenUntil;
   let html = who;
+  if (s.phase === "question" && s.q?.kind === "perform" && me.id === s.draw?.drawerId) {
+    // The host is performing: the secret never touches the shared screen, only a separate window.
+    const key = `perf|${s.qi}|${s.q.text}`;
+    if (bar.dataset.qi !== key) {
+      bar.dataset.qi = key;
+      bar.innerHTML = `<span class="who">${me.emoji} ${esc(me.name)} · ${me.score}</span><span class="display">🎤 You're performing!</span>
+        <button class="power" id="msecret">👀 Show my secret</button><button class="power" id="mpass" ${s.draw.passesLeft > 0 ? "" : "disabled"}>🙈 Pass</button>`;
+      $("#msecret").onclick = () => openSecret(s);
+      $("#mpass").onclick = () => sendMine({ t: "pass" });
+      if (secretWin && !secretWin.closed) openSecret(s); // a pass drew a new one: refresh the open window
+    }
+    document.body.classList.add("locked");
+    return;
+  }
+  if (secretWin && !secretWin.closed && !(s.phase === "question" && s.q?.kind === "perform")) { secretWin.close(); secretWin = null; }
   if (s.phase === "question" && (s.q?.kind === "draw" || s.q?.kind === "perform")) {
     // Patched in place so typing a guess survives state updates.
     if (+bar.dataset.qi !== s.qi || !$("#mstat")) {
@@ -2056,7 +2106,6 @@ function renderPanel() {
   const last = s.qi + 1 >= s.total;
   $("#pactions").innerHTML =
     (s.phase === "lobby" ? `<span class="muted">Start the game from the main screen.</span>` : "") +
-    (s.phase === "question" ? `<button class="big" data-a="skip">Reveal now ⏭</button>` : "") +
     (s.phase === "reveal" ? `<button class="big" data-a="next">${last ? "Final results 🏆" : "Next ▸"}</button>` : "") +
     (s.phase === "end" ? `<button class="big" data-a="again">Run it back 🔁</button>` : "") +
     (["spin", "question", "reveal"].includes(s.phase) ? `<button class="ghost" data-a="end">End game now</button>` : "") +
@@ -2106,7 +2155,8 @@ if (params.get("host") && store.get("rr-host-" + params.get("host").toUpperCase(
   role = params.get("panel") ? "panel" : "host";
   connect();
   if (role === "host" && store.get("rr-hostplayer-" + room)) connectMine();
-} else if (params.get("room") && store.get("rr-name")) {
+} else if (params.get("room") && store.get("rr-name") && sessionGet("rr-joined") === params.get("room").toUpperCase()) {
+  // A reload of a tab that already joined this room: straight back in. A fresh link or QR scan shows the join screen.
   room = params.get("room").toUpperCase(); role = "player"; connect();
 } else {
   landing();
