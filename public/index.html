@@ -128,7 +128,7 @@ input:focus, textarea:focus { outline: none; border-color: var(--cyan); }
 .barrow .track { grid-column: 1 / -1; height: 30px; border-radius: 10px; background: #0005; overflow: hidden; }
 .barrow .fill { height: 100%; border-radius: 10px; width: 0; transition: width 1s cubic-bezier(.2, .9, .3, 1); }
 .barrow.lose { opacity: .4; }
-.barrow.win .label::after { content: " ✔"; color: var(--green); }
+.barrow.win .label::after { content: " ✓"; color: var(--green); }
 .board { background: var(--surface); border: 1px solid var(--border); border-radius: 18px; padding: 10px; display: grid; align-content: start; }
 .board-title { color: var(--muted); font-weight: 700; font-size: .8rem; text-transform: uppercase; letter-spacing: .12em; padding: 6px 10px 8px; }
 
@@ -140,7 +140,7 @@ input:focus, textarea:focus { outline: none; border-color: var(--cyan); }
 .rtile { --c: #888; background: var(--surface); border: 1px solid var(--border); border-radius: 18px; padding: 16px 18px; display: grid; gap: 12px; align-content: start; transition: opacity .3s; position: relative; }
 .rtile.lose { opacity: .4; }
 .rtile.win { background: color-mix(in srgb, var(--c) 22%, var(--surface)); border: 2px solid var(--c); box-shadow: 0 0 34px color-mix(in srgb, var(--c) 35%, transparent); }
-.rtile.win::after { content: "✔"; position: absolute; top: -12px; right: -12px; width: 34px; height: 34px; border-radius: 50%; background: var(--green); color: #0b2a1a; display: grid; place-items: center; font-weight: 900; box-shadow: 0 0 0 4px var(--bg); }
+.rtile.win::after { content: "✓"; position: absolute; top: -12px; right: -12px; width: 34px; height: 34px; border-radius: 50%; background: var(--green); color: #0b2a1a; display: grid; place-items: center; font-weight: 900; box-shadow: 0 0 0 4px var(--bg); }
 .rt-top { display: flex; align-items: center; gap: 14px; font-size: 1.2rem; font-weight: 700; }
 .rt-text { flex: 1; }
 .rt-count { font-weight: 800; font-size: 1.5rem; font-variant-numeric: tabular-nums; color: var(--muted); } .rtile.win .rt-count { color: var(--ink); }
@@ -573,7 +573,8 @@ vote: Who is most likely to still be on mute when it's their turn?
 `;
 
 const COLORS = ["#ff3d6e", "#2d8cff", "#ffb020", "#22c55e", "#a855f7", "#14b8a6", "#f97316", "#ec4899", "#84cc16", "#06b6d4"];
-const SHAPES = ["▲", "◆", "●", "■", "★", "✚", "⬟", "♥", "☀", "☾"];
+// None of these are emoji, so the emoji font never swaps them for pictures.
+const SHAPES = ["▲", "◆", "●", "■", "★", "✚", "⬟", "⬢", "✦", "☾"];
 const AVATARS = ["🦊", "🐸", "🐙", "🦄", "🐼", "🦖", "🐝", "🦉", "🐧", "🦀", "🐯", "🐨", "🦦", "🐳", "🦩", "🐲", "🦔", "🐌", "👾", "🤖", "💃", "💅", "🥲"];
 // Your pick, remembered on this browser. Empty = the server hands out a random free one.
 const myAvatar = () => (AVATARS.includes(store.get("rr-emoji")) ? store.get("rr-emoji") : "");
@@ -599,7 +600,7 @@ const params = new URLSearchParams(location.search);
 const API = location.hostname.endsWith("github.io") ? "https://retro-rumble.zancato-t.workers.dev" : location.origin;
 
 // Must match VERSION in src/index.ts. GitHub Pages caches the page for ~10 minutes, so an old tab can outlive a deploy.
-const BUILD = "2026-10-30.9";
+const BUILD = "2026-10-30.10";
 let endTimer = 0, avOpen = false; // avOpen: the lobby avatar picker stays open across re-renders
 let ws = null, role = null, room = null, state = null, offset = 0, lastKey = "", seenPlayers = new Set();
 let mine = null, mineState = null, mineFrozen = false; // the host's own player seat in Play-along mode
@@ -816,7 +817,7 @@ function landing() {
         <input id="name" maxlength="16" placeholder="Your name" autocomplete="off" value="${esc(store.get("rr-name") || "")}">
         <p class="avlabel">Pick your avatar (or skip for a random one)</p>
         ${avatarPickerHTML(myAvatar())}
-        <button class="big">Jump in ▶</button>
+        <button class="big">Jump in ▸</button>
       </form>
       <div class="card">
         <h2>Running the retro?</h2>
@@ -1086,7 +1087,7 @@ function renderHost(fresh) {
               </div>
             </details>
           </div>
-          <div class="lobby-actions"><button class="big" id="start">Let's rumble ▶</button></div>
+          <div class="lobby-actions"><button class="big" id="start">Let's rumble ▸</button></div>
           <p class="credit muted">Trivia from <a href="https://opentdb.com" target="_blank" rel="noopener">Open Trivia DB</a>, licensed <a href="https://creativecommons.org/licenses/by-sa/4.0/" target="_blank" rel="noopener">CC BY-SA 4.0</a></p>
         </div>`;
       try { new QRCode($("#qr"), { text: joinUrl, width: 190, height: 190, colorDark: "#0d0820", colorLight: "#ffffff" }); } catch { $("#qr").remove(); }
@@ -1143,7 +1144,7 @@ function renderHost(fresh) {
     // Someone else has to be here; the host's own seat in Play along joins at start.
     const ready = n > 0 && (mode !== "play" || !!hostName);
     $("#start").disabled = !ready;
-    $("#start").textContent = ready ? "Let's rumble ▶" : n === 0 ? "Waiting for a player to join…" : "Enter your name to play";
+    $("#start").textContent = ready ? "Let's rumble ▸" : n === 0 ? "Waiting for a player to join…" : "Enter your name to play";
     return;
   }
 
@@ -1296,7 +1297,7 @@ function renderHost(fresh) {
         <div class="verdict pop">${pill}${s.q.kind === "closest" ? `<span>${esc(r.headline.replace(/^.*· /, ""))}</span>` : ""}</div>
         ${r.roast ? `<p class="roast pop">${esc(r.roast)}</p>` : ""}
         <div class="reveal-grid">${left}${boardHTML(s, r)}</div>
-        <div class="host-foot"><button class="big" id="next">${last ? "Final results 🏆" : "Next ▶"}</button></div>
+        <div class="host-foot"><button class="big" id="next">${last ? "Final results 🏆" : "Next ▸"}</button></div>
       </div>`;
     sfx.reveal();
     setTimeout(() => document.querySelectorAll(".sc").forEach((el) => countUp(el, +el.dataset.from, +el.dataset.to)), 700);
@@ -1318,7 +1319,7 @@ function renderHost(fresh) {
           ${perf ? got : `<div class="inkwrap pop"><canvas class="ink"></canvas></div>`}
           ${boardHTML(s, r)}
         </div>
-        <div class="host-foot"><button class="big" id="next">${last ? "Final results 🏆" : "Next ▶"}</button></div>
+        <div class="host-foot"><button class="big" id="next">${last ? "Final results 🏆" : "Next ▸"}</button></div>
       </div>`;
     paintSoon();
     sfx.reveal();
@@ -1336,7 +1337,7 @@ function renderHost(fresh) {
     const byId = Object.fromEntries(s.players.map((p) => [p.id, p]));
     const pickers = (i) => Object.entries(r.picks).filter(([, a]) => a === i).map(([id]) => byId[id]).filter(Boolean);
     const pill = r.winners.length
-      ? `<span class="pill" style="${colorVar(r.winners[0])}"><small>${vote ? (s.mod.id === "contrarian" ? "🙃 Least picked" : "🗳️ Team picked") : { who: "✍️ Written by", dvote: "🏆 Winner" }[s.q.kind] || "✔ Answer"}</small>${r.winners.map((i) => esc(s.q.options[i])).join(" &amp; ")}</span>`
+      ? `<span class="pill" style="${colorVar(r.winners[0])}"><small>${vote ? (s.mod.id === "contrarian" ? "🙃 Least picked" : "🗳️ Team picked") : { who: "✍️ Written by", dvote: "🏆 Winner" }[s.q.kind] || "✓ Answer"}</small>${r.winners.map((i) => esc(s.q.options[i])).join(" &amp; ")}</span>`
       : "";
     app.innerHTML = `
       <div class="host">
@@ -1358,7 +1359,7 @@ function renderHost(fresh) {
           </div>
           ${boardHTML(s, r)}
         </div>
-        <div class="host-foot"><button class="big" id="next">${last ? "Final results 🏆" : "Next ▶"}</button></div>
+        <div class="host-foot"><button class="big" id="next">${last ? "Final results 🏆" : "Next ▸"}</button></div>
       </div>`;
     if (pickRound) paintSoon();
     sfx.reveal();
@@ -1800,8 +1801,8 @@ function qcardHTML(q, n) {
     <input data-f="text" maxlength="${q.kind === "draw" || q.kind === "drawoff" ? 30 : q.kind === "perform" ? 40 : 200}" placeholder="${EDIT_HINTS[q.kind][0]}" value="${esc(q.text)}">
     ${q.kind === "closest" ? `<input data-f="num" type="number" step="any" placeholder="The exact answer" value="${Number.isFinite(q.num) ? q.num : ""}">` : ""}
     ${q.kind !== "quiz" ? `<span class="muted" style="font-size:.85rem">${EDIT_HINTS[q.kind][1]}</span>`
-      : `<div class="opts">${q.options.map((o, i) => `<div class="optrow" style="--c:${COLORS[i]}"><button class="mark ${i === q.correct ? "on" : ""}" data-correct="${i}" title="Mark as the right answer">${i === q.correct ? "✔" : SHAPES[i]}</button><input data-opt="${i}" maxlength="80" placeholder="${i < 2 ? "Answer" : "Answer (optional)"}" value="${esc(o)}"></div>`).join("")}</div>`}
-    <div class="bad-msg">${q.kind === "quiz" ? "Needs a question, 2+ answers and a ✔ on a filled one" : q.kind === "closest" ? "Needs a question and a number" : "Needs some text"}</div>
+      : `<div class="opts">${q.options.map((o, i) => `<div class="optrow" style="--c:${COLORS[i]}"><button class="mark ${i === q.correct ? "on" : ""}" data-correct="${i}" title="Mark as the right answer">${i === q.correct ? "✓" : SHAPES[i]}</button><input data-opt="${i}" maxlength="80" placeholder="${i < 2 ? "Answer" : "Answer (optional)"}" value="${esc(o)}"></div>`).join("")}</div>`}
+    <div class="bad-msg">${q.kind === "quiz" ? "Needs a question, 2+ answers and a ✓ on a filled one" : q.kind === "closest" ? "Needs a question and a number" : "Needs some text"}</div>
   </div>`;
 }
 
@@ -2037,7 +2038,7 @@ function renderPanel() {
       sendMsg({ t: "queueAdd", questions: serializeQs(qs) });
     };
     $("#paddbtn").onclick = () => {
-      if (!draft.some(qValid)) return toast("Finish the question first (text, 2+ answers, a ✔)");
+      if (!draft.some(qValid)) return toast("Finish the question first (text, 2+ answers, a ✓)");
       sendMsg({ t: "queueAdd", questions: serializeQs(draft) });
       addEditor.set([blankQ()]);
     };
@@ -2047,7 +2048,7 @@ function renderPanel() {
   if (s.q && s.phase !== "end") {
     const done = s.players.filter((p) => p.answered).length, live = s.players.filter((p) => p.connected).length;
     now += `<p><b>${esc(s.q.text)}</b> <span class="muted">· ${s.mod.emoji} ${esc(s.mod.label)}</span></p>` +
-      (s.q.kind === "quiz" ? s.q.options.map((o, i) => `<div class="opt ${i === s.q.correct ? "right" : ""}">${i === s.q.correct ? "✔" : "·"} ${esc(o)}</div>`).join("")
+      (s.q.kind === "quiz" ? s.q.options.map((o, i) => `<div class="opt ${i === s.q.correct ? "right" : ""}">${i === s.q.correct ? "✓" : "·"} ${esc(o)}</div>`).join("")
         : s.q.kind === "draw" ? `<p class="muted">🎨 Draw round · ${esc(s.draw?.drawerName ?? "")} is drawing</p>` : `<p class="muted">${KIND_LABEL[s.q.kind] || "Team vote"}</p>`) +
       (s.phase === "question" ? `<p class="muted">${done}/${live} locked in</p>` : "");
   }
@@ -2056,7 +2057,7 @@ function renderPanel() {
   $("#pactions").innerHTML =
     (s.phase === "lobby" ? `<span class="muted">Start the game from the main screen.</span>` : "") +
     (s.phase === "question" ? `<button class="big" data-a="skip">Reveal now ⏭</button>` : "") +
-    (s.phase === "reveal" ? `<button class="big" data-a="next">${last ? "Final results 🏆" : "Next ▶"}</button>` : "") +
+    (s.phase === "reveal" ? `<button class="big" data-a="next">${last ? "Final results 🏆" : "Next ▸"}</button>` : "") +
     (s.phase === "end" ? `<button class="big" data-a="again">Run it back 🔁</button>` : "") +
     (["spin", "question", "reveal"].includes(s.phase) ? `<button class="ghost" data-a="end">End game now</button>` : "") +
     `<button class="ghost" data-close-room>✕ Close room</button>`;
@@ -2068,7 +2069,7 @@ function renderPanel() {
   if (!ps.contains(document.activeElement)) ps.innerHTML = settingsHTML(s.settings, s.allMods);
   $("#pqn").textContent = s.queue.length;
   $("#pqueue").innerHTML = s.queue.length
-    ? s.queue.map((q) => `<div class="qrow"><div>${(KIND_LABEL[q.kind] || "🧠").split(" ")[0]} ${q.kind === "draw" || q.kind === "drawoff" || q.kind === "perform" ? `${kindName(q.kind)}${q.text ? `: ${esc(q.text)}` : " (random)"}` : q.kind === "closest" ? `${esc(q.text)} <small>= ${fmtNum(q.num)}</small>` : esc(q.text)}${q.kind === "quiz" ? `<br><small>✔ ${esc(q.options[q.correct])}</small>` : ""}</div><button class="ghost" data-rm="${q.i}">✕</button></div>`).join("")
+    ? s.queue.map((q) => `<div class="qrow"><div>${(KIND_LABEL[q.kind] || "🧠").split(" ")[0]} ${q.kind === "draw" || q.kind === "drawoff" || q.kind === "perform" ? `${kindName(q.kind)}${q.text ? `: ${esc(q.text)}` : " (random)"}` : q.kind === "closest" ? `${esc(q.text)} <small>= ${fmtNum(q.num)}</small>` : esc(q.text)}${q.kind === "quiz" ? `<br><small>✓ ${esc(q.options[q.correct])}</small>` : ""}</div><button class="ghost" data-rm="${q.i}">✕</button></div>`).join("")
     : `<p class="muted">${s.phase === "lobby" ? "Questions are set in the lobby on the main screen." : "Nothing queued. Add some below, or the game ends after this one."}</p>`;
   $("#pqueue").querySelectorAll("[data-rm]").forEach((b) => (b.onclick = () => sendMsg({ t: "queueRemove", i: +b.dataset.rm })));
   $("#paddbtn").disabled = s.phase === "lobby" || s.phase === "end";
