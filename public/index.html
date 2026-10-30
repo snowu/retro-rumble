@@ -250,11 +250,11 @@ body.playing #hosttools { bottom: 96px; }
 #hosttools button { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 8px 12px; font-size: .9rem; color: var(--muted); }
 #hosttools button:hover { color: var(--ink); background: var(--surface-2); }
 #hosttools .danger:hover { color: var(--red); }
-#hostreacts { display: none; gap: 2px; margin-left: 8px; }
-body.playing #hostreacts { display: flex; }
-#hostreacts button { font-size: 1.3rem; padding: 4px 6px; background: none; border: 0; }
-#hostreacts button:hover { background: var(--surface-2); }
-#hostreacts button:active { transform: scale(1.3); }
+#hostctl { position: fixed; right: 24px; bottom: 90px; z-index: 13; }
+/* the host's own seat: power-ups sit above the corner host buttons */
+@media (min-width: 980px) { body.is-host .phone .powers { bottom: 66px; } }
+@media (max-width: 979px) { body.is-host #hosttools { bottom: 74px; } }
+@media (max-width: 759px) { #hostctl { right: 12px; bottom: 76px; } #hostctl .big { font-size: 1rem; padding: 12px 18px; } }
 #cpbtn { display: none; }
 body.gm-host #cpbtn { display: block; }
 .panel { max-width: 760px; margin: 0 auto; padding: 20px 16px 60px; display: grid; gap: 16px; }
@@ -445,12 +445,12 @@ textarea.win { min-height: 110px; font-size: 1.1rem; }
 <div id="conn">reconnecting…</div>
 <div id="stale">🔄 This page is out of date. Hard-refresh to update (Ctrl+Shift+R, or pull down on phones)</div>
 <div id="mybar"></div>
+<div id="hostctl"></div>
 <div id="hosttools">
   <button id="mutebtn" title="Sound on/off"></button>
   <button data-invite title="Copy the join link">🔗 Invite</button>
   <button id="cpbtn">🎛️ Control panel</button>
   <button class="danger" data-close-room>✕ Close room</button>
-  <span id="hostreacts"></span>
 </div>
 <script>
 const DEFAULT_QUESTIONS = `# "? question" then options, * marks the right one (2-4 options)
@@ -615,10 +615,10 @@ const params = new URLSearchParams(location.search);
 const API = location.hostname.endsWith("github.io") ? "https://retro-rumble.zancato-t.workers.dev" : location.origin;
 
 // Must match VERSION in src/index.ts. GitHub Pages caches the page for ~10 minutes, so an old tab can outlive a deploy.
-const BUILD = "2026-10-30.14";
+const BUILD = "2026-10-30.15";
 let endTimer = 0, avOpen = false; // avOpen: the lobby avatar picker stays open across re-renders
 let ws = null, role = null, room = null, state = null, offset = 0, lastKey = "", seenPlayers = new Set();
-let mine = null, mineState = null, mineFrozen = false; // the host's own player seat in Play-along mode
+let mine = null, mineState = null; // the host's own player seat in Play-along mode
 const SECONDS = [15, 20, 30, 45, 60];
 const serverNow = () => Date.now() + offset;
 
@@ -881,11 +881,14 @@ function landing() {
 
 /* ---------- render ---------- */
 function render() {
-  const key = `${state.role}|${state.phase}|${state.qi}`;
+  const hp = hostPlaying(), src = hp ? mineState : state;
+  const key = `${hp ? "seat" : src.role}|${src.phase}|${src.qi}`;
   const fresh = key !== lastKey;
   lastKey = key;
   app.className = fresh ? "fresh" : "";
+  if (!hp) $("#hostctl").innerHTML = "";
   if (role === "panel") renderPanel();
+  else if (hp) renderHostSeat(fresh);
   else if (state.role === "host") renderHost(fresh);
   else renderPlayer(fresh);
   document.body.classList.toggle("is-host", role === "host");
@@ -894,7 +897,7 @@ function render() {
     renderMine();
   }
   if (fresh) setTimeout(() => app.classList.remove("fresh"), 1200);
-  document.body.classList.toggle("drawing", state.phase === "question" && ["draw", "drawoff", "perform", ...INPUT_KINDS].includes(state.q?.kind));
+  document.body.classList.toggle("drawing", src.phase === "question" && ["draw", "drawoff", "perform", ...INPUT_KINDS].includes(src.q?.kind));
 }
 
 function wheelHTML(s) {
@@ -962,11 +965,13 @@ const PRANK_INFO = {
 /* ---------- draw rounds: one shared ink buffer, painted onto every canvas.ink ---------- */
 const INK_COLORS = ["#111111", "#ffffff", "#e53935", "#1e88e5", "#43a047", "#fdd835", "#fb8c00", "#8e24aa", "#6d4c41"];
 let ink = { qi: -1, strokes: [] }, inkQueued = false;
+const myStrokes = new Set(); // strokes drawn here: the host page gets them echoed back on its host socket
 const pad = { c: INK_COLORS[0], w: 10 };
 function onInk(msg) {
   if (msg.t === "inkAll") ink = { qi: msg.qi, strokes: msg.strokes };
   else if (msg.t === "inkClear") ink.strokes = ink.strokes.filter((x) => (x.a || 0) !== msg.a);
   else if (msg.t === "inkUndo") ink.strokes = ink.strokes.filter((x) => x.id !== msg.id);
+  else if (myStrokes.has(msg.id)) return;
   else {
     let st = ink.strokes.find((x) => x.id === msg.id);
     if (!st) ink.strokes.push((st = { id: msg.id, a: msg.a || 0, c: msg.c, w: msg.w, pts: [] }));
@@ -1001,7 +1006,7 @@ function paint(cv) {
 // The artist's pad: draws locally right away and streams points in small batches.
 function mountPad(cv, a = 0) {
   let cur = null, buf = [], timer = 0;
-  const flush = () => { if (cur && buf.length) sendMsg({ t: "ink", id: cur.id, c: cur.c, w: cur.w, pts: buf }); buf = []; };
+  const flush = () => { if (cur && buf.length) psend({ t: "ink", id: cur.id, c: cur.c, w: cur.w, pts: buf }); buf = []; };
   const add = (e) => {
     const r = cv.getBoundingClientRect();
     const x = Math.round(((e.clientX - r.left) / r.width) * 1000), y = Math.round(((e.clientY - r.top) / r.height) * 1000);
@@ -1009,11 +1014,12 @@ function mountPad(cv, a = 0) {
     paintSoon();
   };
   cv.onpointerdown = (e) => {
-    if (serverNow() < state.me.frozenUntil) return;
+    if (serverNow() < P().me.frozenUntil) return;
     e.preventDefault();
     cv.setPointerCapture?.(e.pointerId);
     cur = { id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6), a, c: pad.c, w: pad.w, pts: [] };
     ink.strokes.push(cur);
+    myStrokes.add(cur.id);
     add(e);
     timer = setInterval(flush, 60);
   };
@@ -1029,7 +1035,7 @@ function undoStroke() {
   if (!last) return;
   ink.strokes = ink.strokes.filter((x) => x !== last);
   paintSoon();
-  sendMsg({ t: "inkUndo", id: last.id });
+  psend({ t: "inkUndo", id: last.id });
 }
 document.addEventListener("keydown", (e) => {
   if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "z" && $("#pad") && !/INPUT|TEXTAREA/.test(document.activeElement?.tagName)) { e.preventDefault(); undoStroke(); }
@@ -1294,12 +1300,7 @@ function renderHost(fresh) {
           <div class="host-foot"></div>
         </div>`;
       paintSoon();
-      // Play along: the host answers by clicking the cards themselves.
-      document.querySelectorAll(".tile[data-i]").forEach((t) => (t.onclick = () => {
-        const me = mineState?.me;
-        if (state.mode !== "play" || mineState?.phase !== "question" || !me || me.answer !== null || mineFrozen) return;
-        sendMine({ t: "answer", i: +t.dataset.i });
-      }));
+
     }
     const live = s.players.filter((p) => p.connected && !s.bench.includes(p.id));
     const done = s.players.filter((p) => p.answered);
@@ -1458,11 +1459,11 @@ const overlaysHTML = (me) =>
   (serverNow() < me.frozenUntil ? `<div class="frozen"><div class="huge">🧊</div><div>FROZEN by ${esc(me.frozenBy)}</div><div class="secs" id="fsecs"></div></div>` : "");
 function bindPowers() {
   const a = $("#allin"), pr = $("#prank");
-  if (a) a.onclick = () => sendMsg({ t: "allin" });
-  if (pr) pr.onclick = () => sendMsg({ t: "prank" });
+  if (a) a.onclick = () => psend({ t: "allin" });
+  if (pr) pr.onclick = () => psend({ t: "prank" });
 }
 const reactsHTML = () => `<div class="reacts">${REACTIONS.map((e) => `<button data-e="${e}">${e}</button>`).join("")}</div>`;
-const bindReacts = () => document.querySelectorAll(".reacts button").forEach((b) => (b.onclick = () => sendMsg({ t: "react", e: b.dataset.e })));
+const bindReacts = () => document.querySelectorAll(".reacts button").forEach((b) => (b.onclick = () => psend({ t: "react", e: b.dataset.e })));
 const meHead = (s) => `<div class="me"><span class="av">${s.me.emoji}</span>${esc(s.me.name)}${s.phase !== "lobby" ? `<span class="rank">#${s.me.rank} of ${s.playerCount}</span>` : ""}<span class="sc">${s.me.score}</span></div>`;
 
 // The player's reveal: your result up top, then what everyone picked and the standings.
@@ -1500,12 +1501,13 @@ function playerRevealHTML(s) {
     ${s.q && k !== "closest" && k !== "hottake" && k !== "draw" && k !== "perform" ? `<p class="qtext small" style="margin:0">${esc(s.q.text)}</p>` : ""}
     ${what}
     ${board}
+    ${role === "player" ? `<p class="muted" style="text-align:center;margin:0">⏳ Next round when the host is ready</p>` : ""}
   </div>`;
 }
 
-// Built once per draw round and then patched, so the pad and the guess box survive every state update.
+// Built once per draw round and then patched, so the pad and the guess box survive every P() update.
 function renderDrawPlayer() {
-  const s = state, me = s.me, off = s.q.kind === "drawoff";
+  const s = P(), me = s.me, off = s.q.kind === "drawoff";
   const ai = off ? s.artists.findIndex((x) => x.id === me.id) : me.id === s.draw.drawerId ? 0 : -1;
   const artist = ai >= 0, d = s.draw;
   if (!$("#drawroot") || +$("#drawroot").dataset.qi !== s.qi) {
@@ -1532,7 +1534,7 @@ function renderDrawPlayer() {
       const tools = () => document.querySelectorAll(".tools [data-c], .tools [data-w]").forEach((b) => b.classList.toggle("on", b.dataset.c === pad.c || +b.dataset.w === pad.w));
       document.querySelectorAll(".tools [data-c]").forEach((b) => (b.onclick = () => { pad.c = b.dataset.c; tools(); }));
       document.querySelectorAll(".tools [data-w]").forEach((b) => (b.onclick = () => { pad.w = +b.dataset.w; tools(); }));
-      $("#clear").onclick = () => { ink.strokes = ink.strokes.filter((x) => (x.a || 0) !== ai); paintSoon(); sendMsg({ t: "inkClear" }); };
+      $("#clear").onclick = () => { ink.strokes = ink.strokes.filter((x) => (x.a || 0) !== ai); paintSoon(); psend({ t: "inkClear" }); };
       $("#undo").onclick = undoStroke;
       tools();
     }
@@ -1545,7 +1547,7 @@ function renderDrawPlayer() {
     if (got) $("#gbox").innerHTML = `<h2 class="display up" style="text-align:center;margin:0">✅ Got it!</h2>`;
     else if (!$("#ginput")) {
       $("#gbox").innerHTML = `<form class="gform" id="gform"><input id="ginput" maxlength="40" autocomplete="off" autocapitalize="off" placeholder="Type your guess…"><button>Guess</button></form>`;
-      $("#gform").onsubmit = (e) => { e.preventDefault(); sendGuess($("#ginput"), sendMsg); };
+      $("#gform").onsubmit = (e) => { e.preventDefault(); sendGuess($("#ginput"), psend); };
     }
     if ($("#ginput")) $("#ginput").disabled = frozen;
     $("#dfeed").innerHTML = feedHTML(s.feed);
@@ -1555,9 +1557,9 @@ function renderDrawPlayer() {
   $("#doverlay").innerHTML = overlaysHTML(me);
 }
 
-// Closest wins, hot takes and writing rounds: a form that survives state updates until you lock in.
+// Closest wins, hot takes and writing rounds: a form that survives P() updates until you lock in.
 function renderInputPlayer() {
-  const s = state, me = s.me, k = s.q.kind, done = me.answer !== null || s.benched;
+  const s = P(), me = s.me, k = s.q.kind, done = me.answer !== null || s.benched;
   const key = `${s.qi}|${done}`;
   if (!$("#inroot") || $("#inroot").dataset.key !== key) {
     const locked = s.benched ? `<div class="center"><div class="huge">👀</div><p class="muted">Sit back, this one's for the others.</p></div>`
@@ -1590,14 +1592,14 @@ function renderInputPlayer() {
         lock.dataset.ready = "1"; lock.disabled = serverNow() < me.frozenUntil; lock.textContent = "Lock in 🔒";
       }));
       $("#pct").oninput = () => ($("#pctv").textContent = $("#pct").value + "%");
-      lock.onclick = () => agree !== null && sendMsg({ t: "take", agree, pct: +$("#pct").value });
+      lock.onclick = () => agree !== null && psend({ t: "take", agree, pct: +$("#pct").value });
     } else if (!done) {
       $("#inform").onsubmit = (e) => {
         e.preventDefault();
         const v = $("#inval").value.trim();
         if (!v) return;
         if (k === "closest" && !Number.isFinite(Number(v.replace(/[,_ ]/g, "")))) return toast("Numbers only, please");
-        sendMsg(k === "closest" ? { t: "num", v } : { t: "write", text: v });
+        psend(k === "closest" ? { t: "num", v } : { t: "write", text: v });
       };
     }
   }
@@ -1637,35 +1639,9 @@ async function playSnippet(term) {
   info.innerHTML = `Preview: ${esc(hit.track)} · ${esc(hit.artist)} · <a href="${esc(hit.link)}" target="_blank" rel="noopener" style="color:var(--muted)">Apple Music ↗</a>`;
 }
 
-// The host's secret window: a plain popup, so it stays off a shared tab or window.
-let secretWin = null;
-function openSecret(s) {
-  const type = s.draw.secretType === "movie" ? "🎬 a movie" : s.draw.secretType === "song" ? "🎵 a song" : "🎵🎬 a song or movie";
-  secretWin = window.open("", "rr-secret", "width=440,height=560");
-  if (!secretWin) return toast("Allow pop-ups to see your secret");
-  const d = secretWin.document;
-  d.open();
-  d.write(`<!doctype html><meta charset="utf-8"><title>🤫 Your secret</title>
-    <link href="https://fonts.googleapis.com/css2?family=Bungee&family=Inter:wght@400;700&family=Noto+Color+Emoji&display=swap" rel="stylesheet">
-    <body style="margin:0;background:#0d0820;color:#f6f1ff;font-family:Inter,'Noto Color Emoji',sans-serif;display:grid;place-items:center;min-height:100vh;text-align:center;padding:20px;box-sizing:border-box">
-    <div style="display:grid;gap:14px;max-width:380px">
-      <div style="color:#a99cc9">You're performing ${type}:</div>
-      <div style="font-family:Bungee,'Noto Color Emoji',sans-serif;font-size:2.2rem;color:#ffd23f;line-height:1.1">${esc(s.q.text)}</div>
-      <div style="color:#a99cc9;font-weight:700">🎵 Hum the tune · 🙌 mime and gesture<br>🚫 No words, no lyrics</div>
-      <div id="snip" style="color:#a99cc9">🎧 Looking for a snippet…</div>
-      <small style="color:#a99cc9">Keep this window out of the screen share.</small>
-    </div></body>`);
-  d.close();
-  findPreview(s.preview).then((hit) => {
-    const el = d.getElementById("snip");
-    if (!el) return;
-    el.innerHTML = hit?.url ? `<audio controls src="${esc(hit.url)}" style="width:100%"></audio><br><small>${esc(hit.track)} · ${esc(hit.artist)}</small>` : "🎧 No snippet this time";
-  });
-}
-
 // Perform it: the star sees the secret and a pass button, everyone else gets the guess box.
 function renderPerformPlayer() {
-  const s = state, me = s.me, d = s.draw, star = me.id === d.drawerId;
+  const s = P(), me = s.me, d = s.draw, star = me.id === d.drawerId;
   const key = `${s.qi}|${d.drawerId}|${star ? s.q.text : ""}`;
   if (!$("#perfroot") || $("#perfroot").dataset.key !== key) {
     stopSnippet();
@@ -1688,7 +1664,7 @@ function renderPerformPlayer() {
       <div id="doverlay"></div>
     </div>${reactsHTML()}`;
     bindReacts();
-    $("#passbtn") && ($("#passbtn").onclick = () => sendMsg({ t: "pass" }));
+    $("#passbtn") && ($("#passbtn").onclick = () => psend({ t: "pass" }));
     $("#snipbtn") && ($("#snipbtn").onclick = () => playSnippet(s.preview));
   }
   $("#dhead").innerHTML = meHead(s);
@@ -1698,7 +1674,7 @@ function renderPerformPlayer() {
     if (got) $("#gbox").innerHTML = `<h2 class="display up" style="text-align:center;margin:0">✅ Got it!</h2>`;
     else if (!$("#ginput")) {
       $("#gbox").innerHTML = `<form class="gform" id="gform"><input id="ginput" maxlength="40" autocomplete="off" autocapitalize="off" placeholder="Song or movie title…"><button>Guess</button></form>`;
-      $("#gform").onsubmit = (e) => { e.preventDefault(); sendGuess($("#ginput"), sendMsg); };
+      $("#gform").onsubmit = (e) => { e.preventDefault(); sendGuess($("#ginput"), psend); };
     }
     if ($("#ginput")) $("#ginput").disabled = frozen;
     $("#dfeed").innerHTML = feedHTML(s.feed);
@@ -1709,7 +1685,7 @@ function renderPerformPlayer() {
 }
 
 function renderPlayer(fresh) {
-  const s = state, me = s.me;
+  const s = P(), me = s.me;
   if (!(s.phase === "question" && s.q?.kind === "perform" && me.id === s.draw?.drawerId)) stopSnippet();
   if (s.phase === "spin" && !fresh) return;
   if (s.phase === "question" && (s.q?.kind === "draw" || s.q?.kind === "drawoff")) return renderDrawPlayer();
@@ -1722,7 +1698,7 @@ function renderPlayer(fresh) {
   if (s.phase === "lobby") {
     body = `<div class="center"><button class="myav pop" id="myav" title="Change avatar">${me.emoji}</button><p class="avlabel">tap to change</p>
       <div id="avbox" style="${avOpen ? "" : "display:none;"}width:100%">${avatarPickerHTML(me.emoji)}</div><h2 class="display pop">You're in!</h2>
-      <p class="muted">Eyes on the shared screen. ${s.playerCount} player${s.playerCount > 1 ? "s" : ""} so far.</p>
+      <p class="muted">Waiting for the host to start. ${s.playerCount} player${s.playerCount > 1 ? "s" : ""} so far.</p>
       ${s.powerups ? `<p class="muted">🎲 <b>All-in</b> once per game, plus a prank card: ${PRANK_INFO[me.prank]?.[0] ?? "🃏"} <b>${esc(PRANK_INFO[me.prank]?.[1] ?? "a prank")}</b>. Used cards get refilled every few questions.</p>` : ""}
       <button class="perfbtn ${me.performer ? "on" : ""}" id="perfbtn">${me.performer ? "🎤 You're on the performer list. Tap to opt out" : "🎤 Happy to hum &amp; mime a song or movie on the call? Tap to opt in"}</button></div>`;
   } else if (s.phase === "spin") {
@@ -1751,20 +1727,23 @@ function renderPlayer(fresh) {
     body = playerRevealHTML(s);
   } else if (s.phase === "end") {
     const medal = ["🥇", "🥈", "🥉"][me.rank - 1] || "🫡";
-    body = `<div class="center"><div class="huge pop">${medal}</div><h2 class="display">#${me.rank} of ${s.playerCount}</h2><p class="result-delta">${me.score}</p>
-      ${s.awards.length ? `<div class="awards">${s.awards.map((a) => `<div class="award"><span class="ae">${a.emoji}</span><b>${esc(a.title)}</b><small>${esc(a.desc)}</small></div>`).join("")}</div>` : ""}
-      <p class="muted">GG. Now back to the action items.</p></div>`;
+    const byId = Object.fromEntries(s.roster.map((p) => [p.id, p]));
+    body = `<div class="preveal">
+      <div class="presult pop"><span class="picon">${medal}</span><span class="result-delta">#${me.rank} of ${s.playerCount}</span><span class="pnote">${me.score} points · GG, now back to the action items</span></div>
+      <div class="pboard">${s.roster.map((p) => `<div class="pb ${p.id === me.id ? "mine" : ""}"><span>${["🥇", "🥈", "🥉"][p.rank - 1] || p.rank}</span><span>${p.emoji} ${esc(p.name)}</span><small></small><b>${p.score}</b></div>`).join("")}</div>
+      ${s.awards.length ? `<h2 class="display" style="text-align:center;margin:0">Special awards</h2><div class="awards">${s.awards.map((a, k) => byId[a.id] ? `<div class="award" style="animation-delay:${0.3 + k * 0.25}s"><span class="ae">${a.emoji}</span><b>${esc(a.title)}</b><span class="who">${byId[a.id].emoji} ${esc(byId[a.id].name)}</span><small>${esc(a.desc)}</small></div>` : "").join("")}</div>` : ""}
+    </div>`;
   }
 
   app.innerHTML = `<div class="phone">${head}${body}</div>${reacts}`;
   if (s.q?.kind === "dvote") paintSoon();
-  document.querySelectorAll(".answer").forEach((b) => (b.onclick = () => { navigator.vibrate?.(30); sendMsg({ t: "answer", i: +b.dataset.i }); }));
+  document.querySelectorAll(".answer").forEach((b) => (b.onclick = () => { navigator.vibrate?.(30); psend({ t: "answer", i: +b.dataset.i }); }));
   bindReacts();
   bindPowers();
-  $("#perfbtn") && ($("#perfbtn").onclick = () => sendMsg({ t: "performer", on: !me.performer }));
+  $("#perfbtn") && ($("#perfbtn").onclick = () => psend({ t: "performer", on: !me.performer }));
   if ($("#myav")) {
     $("#myav").onclick = () => { avOpen = !avOpen; $("#avbox").style.display = avOpen ? "" : "none"; };
-    bindAvatarPicker($("#avbox"), (e) => { avOpen = false; sendMsg({ t: "avatar", e }); });
+    bindAvatarPicker($("#avbox"), (e) => { avOpen = false; psend({ t: "avatar", e }); });
   }
   if ($(".frozen")) navigator.vibrate?.([80, 40, 80]);
   if (s.phase === "spin" && s.wheelOn) spinWheel(s);
@@ -1959,9 +1938,8 @@ $("#mutebtn").onclick = () => { muted = !muted; store.set("rr-mute", muted ? "1"
 document.addEventListener("keydown", (e) => {
   const n = +e.key;
   if (!(n >= 1 && n <= 9) || e.ctrlKey || e.metaKey || e.altKey || /INPUT|TEXTAREA|SELECT/.test(document.activeElement?.tagName)) return;
-  if (state?.phase !== "question") return;
-  if (role === "player") document.querySelectorAll(".answer")[n - 1]?.click();
-  else if (role === "host" && state.mode === "play") document.querySelectorAll(".tile[data-i]")[n - 1]?.click();
+  if (P()?.phase !== "question") return;
+  if (role === "player" || hostPlaying()) document.querySelectorAll(".answer")[n - 1]?.click();
 });
 
 /* ---------- host modes ---------- */
@@ -1991,10 +1969,10 @@ function connectMine(onFirstState) {
   mine = new WebSocket(`${proto}://${api.host}/ws/${room}?role=player&pid=${encodeURIComponent(pid)}&name=${encodeURIComponent(name)}&emoji=${encodeURIComponent(myAvatar())}`);
   mine.onmessage = (ev) => {
     const msg = JSON.parse(ev.data);
-    if (msg.t !== "state") return; // events already arrive on the host socket
+    if (msg.t === "event" && msg.own) return toast(msg.text); // room-wide events already arrive on the host socket
+    if (msg.t !== "state") return;
     mineState = msg;
-    document.body.classList.add("playing");
-    renderMine();
+    if (state) render();
     const wantPerform = store.get("rr-hostperform") === "1";
     if (msg.me.performer !== wantPerform) sendMine({ t: "performer", on: wantPerform }); // the lobby toggle, applied once the seat exists
     if (onFirstState) { const f = onFirstState; onFirstState = null; f(); }
@@ -2005,108 +1983,27 @@ function connectMine(onFirstState) {
   };
 }
 const sendMine = (m) => mine?.readyState === 1 && mine.send(JSON.stringify(m));
-// Playing along from the big screen: the host's own reactions go through their player seat.
-$("#hostreacts").innerHTML = REACTIONS.map((e) => `<button data-e="${e}" title="React">${e}</button>`).join("");
-$("#hostreacts").onclick = (e) => { const b = e.target.closest("button"); if (b) sendMine({ t: "react", e: b.dataset.e }); };
+// Play along: once the game starts, the host's page is just their own player seat (the same screens
+// everyone sees on their device) plus the host buttons. P() and psend() pick the right state and socket.
+const hostPlaying = () => role === "host" && state?.mode === "play" && state.phase !== "lobby" && !!mineState;
+const P = () => (hostPlaying() ? mineState : state);
+const psend = (m) => (hostPlaying() ? sendMine(m) : sendMsg(m));
+function renderHostSeat(fresh) {
+  renderPlayer(fresh);
+  const s = mineState, last = state.qi + 1 >= state.total;
+  $("#hostctl").innerHTML = s.phase === "reveal" ? `<button class="big" id="hnext">${last ? "Final results 🏆" : "Next ▸"}</button>`
+    : s.phase === "end" ? `<button class="big" id="hagain">Run it back 🔁</button>` : "";
+  $("#hnext") && ($("#hnext").onclick = () => sendMsg({ t: "next" }));
+  $("#hagain") && ($("#hagain").onclick = () => sendMsg({ t: "again" }));
+  if (fresh && s.phase === "reveal") sfx.reveal();
+  if (fresh && s.phase === "end") { sfx.fanfare(); setTimeout(confetti, 600); }
+}
 
+// The host's seat strip: only in the lobby between games; in the game the page is the seat itself.
 function renderMine() {
-  const bar = $("#mybar"), s = mineState;
-  if (!s || !state || state.mode !== "play") { document.body.classList.remove("playing"); return; }
-  document.body.classList.add("playing");
-  const me = s.me;
-  const who = `<span class="who">${me.emoji} ${esc(me.name)} · ${me.score}</span>`;
-  mineFrozen = s.phase === "question" && serverNow() < me.frozenUntil;
-  let html = who;
-  if (s.phase === "question" && s.q?.kind === "perform" && me.id === s.draw?.drawerId) {
-    // The host is performing: the secret never touches the shared screen, only a separate window.
-    const key = `perf|${s.qi}|${s.q.text}`;
-    if (bar.dataset.qi !== key) {
-      bar.dataset.qi = key;
-      bar.innerHTML = `<span class="who">${me.emoji} ${esc(me.name)} · ${me.score}</span><span class="display">🎤 You're performing!</span>
-        <button class="power" id="msecret">👀 Show my secret</button><button class="power" id="mpass" ${s.draw.passesLeft > 0 ? "" : "disabled"}>🙈 Pass</button>`;
-      $("#msecret").onclick = () => openSecret(s);
-      $("#mpass").onclick = () => sendMine({ t: "pass" });
-      if (secretWin && !secretWin.closed) openSecret(s); // a pass drew a new one: refresh the open window
-    }
-    document.body.classList.add("locked");
-    return;
-  }
-  if (secretWin && !secretWin.closed && !(s.phase === "question" && s.q?.kind === "perform")) { secretWin.close(); secretWin = null; }
-  if (s.phase === "question" && (s.q?.kind === "draw" || s.q?.kind === "perform")) {
-    // Patched in place so typing a guess survives state updates.
-    if (+bar.dataset.qi !== s.qi || !$("#mstat")) {
-      bar.dataset.qi = s.qi;
-      bar.innerHTML = `<span class="who" id="mwho"></span><span id="mstat"></span><span id="mpow"></span>`;
-    }
-    const got = me.answer !== null;
-    $("#mwho").textContent = `${me.emoji} ${me.name} · ${me.score}`;
-    if (got) $("#mstat").innerHTML = `<span class="display up">✅ Got it: ${esc(s.q.text)}</span>`;
-    else if (mineFrozen) $("#mstat").innerHTML = `<span class="frz">🧊 Frozen by ${esc(me.frozenBy)}</span>`;
-    else if (!$("#minput")) {
-      $("#mstat").innerHTML = `<form class="gform" id="mform"><input id="minput" maxlength="40" autocomplete="off" placeholder="Your guess…"><button>Guess</button></form>`;
-      $("#mform").onsubmit = (e) => { e.preventDefault(); sendGuess($("#minput"), sendMine); };
-    }
-    $("#mpow").innerHTML = s.powerups ? `<button class="power ${me.allInActive ? "on" : ""}" data-p="allin" ${me.allInUsed || got ? "disabled" : ""}>🎲 ${me.allInActive ? "ALL-IN!" : "All-in"}</button>
-      <button class="power" data-p="prank" ${me.prank ? "" : "disabled"}>${me.prank ? PRANK_INFO[me.prank].slice(0, 2).join(" ") : "🃏 No prank"}</button>` : "";
-    $("#mpow").querySelectorAll("[data-p]").forEach((b) => (b.onclick = () => sendMine({ t: b.dataset.p })));
-    document.body.classList.add("locked");
-    return;
-  }
-  if (s.phase === "question" && (s.q?.kind === "closest" || s.q?.kind === "hottake")) {
-    // Patched in place so a half-typed guess survives state updates.
-    if (+bar.dataset.qi !== s.qi || !$("#mstat")) {
-      bar.dataset.qi = s.qi;
-      bar.innerHTML = `<span class="who" id="mwho"></span><span id="mstat"></span>`;
-    }
-    $("#mwho").textContent = `${me.emoji} ${me.name} · ${me.score}`;
-    if (me.answer !== null) $("#mstat").innerHTML = `<span class="display">🔒 Locked in</span>`;
-    else if (mineFrozen) $("#mstat").innerHTML = `<span class="frz">🧊 Frozen by ${esc(me.frozenBy)}</span>`;
-    else if (!$("#mform")) {
-      $("#mstat").innerHTML = s.q.kind === "closest"
-        ? `<form class="gform" id="mform"><input id="minput" inputmode="decimal" autocomplete="off" placeholder="Your guess"><button>Lock in</button></form>`
-        : `<form class="gform" id="mform"><span class="takebtns mini"><button type="button" data-agree="1">👍 Agree</button><button type="button" data-agree="0">👎 Disagree</button></span>
-           <span class="mpct"><input type="range" id="mpct" min="0" max="100" step="5" value="50"><b id="mpctv">50%</b> agree</span><button id="mlock" disabled>Lock in</button></form>`;
-      let agree = null;
-      $("#mform").querySelectorAll("[data-agree]").forEach((b) => (b.onclick = () => {
-        agree = b.dataset.agree === "1";
-        $("#mform").querySelectorAll("[data-agree]").forEach((x) => x.classList.toggle("on", x === b));
-        $("#mlock").disabled = false;
-      }));
-      if ($("#mpct")) $("#mpct").oninput = () => ($("#mpctv").textContent = $("#mpct").value + "%");
-      $("#mform").onsubmit = (e) => {
-        e.preventDefault();
-        if (s.q.kind === "closest") { const v = $("#minput").value.trim(); if (v) sendMine({ t: "num", v }); }
-        else if (agree !== null) sendMine({ t: "take", agree, pct: +$("#mpct").value });
-      };
-    }
-    document.body.classList.add("locked");
-    return;
-  }
-  bar.dataset.qi = "";
-  if (s.phase === "question" && (s.q?.kind === "write" || s.q?.kind === "drawoff")) {
-    bar.innerHTML = `<span class="who">${me.emoji} ${esc(me.name)} · ${me.score}</span><span class="muted">${s.q.kind === "write" ? "✍️ Everyone else is writing. Your seat sits this one out." : "🖌️ Watch the draw-off, you vote next."}</span>`;
-    document.body.classList.add("locked");
-    return;
-  }
-  if (s.phase === "question" && s.q) {
-    const answered = me.answer !== null;
-    if (mineFrozen) html += `<span class="frz">🧊 Frozen by ${esc(me.frozenBy)}</span>`;
-    else if (answered) html += `<span class="display">🔒 Locked in</span>`;
-    else html += `<span class="display">👆 Click a card to answer</span>`;
-    if (s.powerups) html += `
-      <button class="power ${me.allInActive ? "on" : ""}" data-p="allin" ${me.allInUsed || answered ? "disabled" : ""}>🎲 ${me.allInActive ? "ALL-IN!" : "All-in"}</button>
-      ${me.swapPending ? `<button class="power on" disabled>🔄 Swap armed</button>` : `<button class="power" data-p="prank" ${me.prank ? "" : "disabled"}>${me.prank ? PRANK_INFO[me.prank].slice(0, 2).join(" ") : "🃏 No prank"}</button>`}`;
-  } else if (s.phase === "reveal" && s.result) {
-    const r = s.result;
-    html += `<span class="display ${r.delta > 0 ? "up" : r.delta < 0 ? "down" : "muted"}">${r.delta > 0 ? "+" : ""}${r.delta}</span>${r.note ? `<span class="muted">${esc(r.note)}</span>` : ""}<span class="muted">#${me.rank}</span>`;
-  } else if (s.phase === "end") {
-    html += `<span class="display">#${me.rank} of ${s.playerCount}</span>`;
-  } else {
-    html += `<span class="muted">You're playing too 🎮</span>`;
-  }
-  document.body.classList.toggle("locked", s.phase !== "question" || me.answer !== null || mineFrozen);
-  bar.innerHTML = html;
-  bar.querySelectorAll("[data-p]").forEach((b) => (b.onclick = () => sendMine({ t: b.dataset.p })));
+  const show = role === "host" && state?.mode === "play" && !!mineState && !hostPlaying();
+  document.body.classList.toggle("playing", show);
+  if (show) $("#mybar").innerHTML = `<span class="who">${mineState.me.emoji} ${esc(mineState.me.name)} · ${mineState.me.score}</span><span class="muted">You're playing too 🎮</span>`;
 }
 
 // Game master: a separate window so upcoming answers never hit the shared screen.
@@ -2189,12 +2086,11 @@ function renderPanel() {
     const secs = Math.ceil(left / 1000);
     document.querySelectorAll(".timer-num").forEach((el) => (el.textContent = secs));
     if (role === "host") clockFrame(left);
-    if (role === "host" && mineState && mineFrozen !== (serverNow() < mineState.me.frozenUntil)) renderMine();
-    if (role === "player") {
-      const f = state.me.frozenUntil - serverNow();
+    if (role === "player" || hostPlaying()) {
+      const f = P().me.frozenUntil - serverNow();
       const fs = $("#fsecs");
       if (fs) fs.textContent = Math.max(0, Math.ceil(f / 1000));
-      const fogged = serverNow() < state.me.fogUntil;
+      const fogged = serverNow() < P().me.fogUntil;
       if (!!$(".frozen") !== f > 0 || !!$(".fog") !== fogged) render();
     }
   }

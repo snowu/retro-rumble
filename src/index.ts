@@ -246,7 +246,6 @@ const WRITE_PROMPTS = [
   "Your dream retirement, in one sentence",
 ];
 const FOG_MS = 6000;
-const isHostSeat = (p: Player) => p.id.startsWith("host-"); // the host's own seat answers on the big screen
 
 const SECONDS = [15, 20, 30, 45, 60];
 const DEFAULT_SETTINGS: Settings = { seconds: 30, mods: [...QUIZ_MODS, "contrarian"], powerups: true };
@@ -262,7 +261,7 @@ function cleanSettings(raw: unknown, prev: Settings): Settings {
 }
 
 // Bump together with BUILD in public/index.html: pages with an older BUILD ask to be refreshed.
-const VERSION = "2026-10-30.14";
+const VERSION = "2026-10-30.15";
 const SPIN_MS = 6500;
 const INTRO_MS = 5000;
 const FREEZE_MS = 5000;
@@ -563,7 +562,6 @@ export class Room extends DurableObject<Env> {
     if (GUESS_KINDS.includes(q.kind)) return new Set([this.drawerId]);
     if (q.kind === "who") return new Set([q.authorId ?? ""]);
     if (q.kind === "drawoff" || q.kind === "dvote") return new Set(this.artists);
-    if (q.kind === "write") return new Set([...this.players.values()].filter(isHostSeat).map((p) => p.id));
     return new Set();
   }
 
@@ -729,7 +727,7 @@ export class Room extends DurableObject<Env> {
     } else if (msg.t === "pass") {
       // The performer doesn't know it, or doesn't want to: hand it to another volunteer, or draw a new one.
       if (this.phase !== "question" || kind !== "perform" || p.id !== this.drawerId || this.passes >= 2) return;
-      if ([...this.players.values()].some((o) => o.answer !== null)) return this.send(p.ws, { t: "event", text: "Someone already got it, keep going!" });
+      if ([...this.players.values()].some((o) => o.answer !== null)) return this.send(p.ws, { t: "event", own: true, text: "Someone already got it, keep going!" });
       this.passes++;
       const next = this.volunteers().find((o) => o.id !== p.id);
       if (next) { p.performed--; next.performed++; this.drawerId = next.id; }
@@ -754,7 +752,7 @@ export class Room extends DurableObject<Env> {
         this.broadcast();
         this.checkAllIn(1200);
       } else if (word.length >= 4 && lev(g, word) <= Math.max(1, Math.floor(word.length / 8))) {
-        this.send(p.ws, { t: "event", text: `🔥 "${text}" is SO close` });
+        this.send(p.ws, { t: "event", own: true, text: `🔥 "${text}" is SO close` });
       } else {
         this.feed.push({ emoji: p.emoji, name: p.name, text });
         if (this.feed.length > 60) this.feed.shift();
@@ -770,19 +768,19 @@ export class Room extends DurableObject<Env> {
       if (this.phase !== "question" || !this.settings.powerups || !p.prank) return;
       const open = [...this.players.values()].filter((o) => o.id !== p.id && o.ws && o.answer === null);
       if (p.prank === "swap") {
-        if (kind !== "quiz" && kind !== "vote") return this.send(p.ws, { t: "event", text: "Nothing to swap this round. Keep it for later" });
+        if (kind !== "quiz" && kind !== "vote") return this.send(p.ws, { t: "event", own: true, text: "Nothing to swap this round. Keep it for later" });
         if (p.swapPending) return;
         p.swapPending = true;
         p.prank = null;
         this.event(`🔄 ${p.name} is planning a swap 👀`);
         return this.broadcast();
       }
-      if (p.prank === "banana" && !this.cur?.options.length) return this.send(p.ws, { t: "event", text: "No buttons to banana this round. Keep it for later" });
+      if (p.prank === "banana" && !this.cur?.options.length) return this.send(p.ws, { t: "event", own: true, text: "No buttons to banana this round. Keep it for later" });
       const target =
         p.prank === "ice" ? this.ranked().find((o) => open.includes(o) && o.frozenUntil < now)
-        : p.prank === "banana" ? pick(open.filter((o) => !o.banana && !isHostSeat(o)))
-        : pick(open.filter((o) => o.fogUntil < now && !isHostSeat(o)));
-      if (!target) return this.send(p.ws, { t: "event", text: "Nobody left to prank 🤷 Keep it for later" });
+        : p.prank === "banana" ? pick(open.filter((o) => !o.banana))
+        : pick(open.filter((o) => o.fogUntil < now));
+      if (!target) return this.send(p.ws, { t: "event", own: true, text: "Nobody left to prank 🤷 Keep it for later" });
       target.stats.pranked++;
       if (p.prank === "ice") {
         target.frozenUntil = now + FREEZE_MS;
@@ -836,7 +834,7 @@ export class Room extends DurableObject<Env> {
       this.cur = { ...q, options: ps.map((p) => `${p.emoji} ${p.name}`) };
     } else if (q.kind === "draw") {
       // The artist is whoever has drawn least; the host's own seat would show the word on the big screen.
-      const artists = shuffle([...this.players.values()].filter((p) => p.ws && !isHostSeat(p))).sort((a, b) => a.drawn - b.drawn);
+      const artists = shuffle([...this.players.values()].filter((p) => p.ws)).sort((a, b) => a.drawn - b.drawn);
       if (!artists.length || [...this.players.values()].filter((p) => p.ws).length < 2) return this.nextQuestion();
       const drawer = artists[0];
       drawer.drawn++;
@@ -859,7 +857,7 @@ export class Room extends DurableObject<Env> {
       this.feed = [];
       this.pickSecret(q, []);
     } else if (q.kind === "drawoff") {
-      const pair = shuffle([...this.players.values()].filter((p) => p.ws && !isHostSeat(p))).sort((a, b) => a.drawn - b.drawn).slice(0, 2);
+      const pair = shuffle([...this.players.values()].filter((p) => p.ws)).sort((a, b) => a.drawn - b.drawn).slice(0, 2);
       if (pair.length < 2 || [...this.players.values()].filter((p) => p.ws).length < 3) return this.nextQuestion();
       for (const p of pair) p.drawn++;
       this.artists = pair.map((p) => p.id);
@@ -879,7 +877,7 @@ export class Room extends DurableObject<Env> {
       if (!this.players.get(q.authorId ?? "")) return this.nextQuestion();
       this.voteIds = ps.map((p) => p.id);
       this.cur = { ...q, options: ps.map((p) => `${p.emoji} ${p.name}`), correct: this.voteIds.indexOf(q.authorId!) };
-    } else if (q.kind === "write" && [...this.players.values()].filter((p) => p.ws && !isHostSeat(p)).length < 3) {
+    } else if (q.kind === "write" && [...this.players.values()].filter((p) => p.ws).length < 3) {
       return this.nextQuestion(); // who wrote it needs a few writers to be a guess
     } else {
       this.cur = q;
@@ -1435,10 +1433,10 @@ export class Room extends DurableObject<Env> {
       role: "player",
       me: {
         id: p.id, name: p.name, emoji: p.emoji, score: p.score, streak: p.streak, rank: this.rankOf(p),
-        answer: p.answer, allInUsed: p.allInUsed, performer: p.performer, hostSeat: isHostSeat(p), allInActive: p.allInActive, prank: p.prank, swapPending: p.swapPending,
+        answer: p.answer, allInUsed: p.allInUsed, performer: p.performer, allInActive: p.allInActive, prank: p.prank, swapPending: p.swapPending,
         frozenUntil: p.frozenUntil, frozenBy: p.frozenBy, fogUntil: p.fogUntil, fogBy: p.fogBy, banana: p.banana,
       },
-      awards: this.phase === "end" ? this.awards().filter((a) => a.id === p.id) : [],
+      awards: this.phase === "end" ? this.awards() : [],
       playerCount: this.players.size,
       q: q && (options.length || (q.kind !== "quiz" && q.kind !== "vote" && this.phase !== "spin"))
         ? { kind: q.kind, text: GUESS_KINDS.includes(q.kind) && p.id !== this.drawerId && p.answer === null && this.phase !== "reveal" ? "" : q.text, prompt: q.prompt ?? "", options }
@@ -1455,7 +1453,7 @@ export class Room extends DurableObject<Env> {
       // Everyone's picks and the standings, so phones show who answered what too.
       picks: this.phase === "reveal" && r ? r.picks : {},
       gotIt: this.phase === "reveal" && r?.draw ? r.draw.got : [],
-      roster: this.phase === "reveal" ? this.ranked().map((o) => ({ id: o.id, name: o.name, emoji: o.emoji, score: o.score, rank: this.rankOf(o), delta: r?.results[o.id]?.delta ?? 0 })) : [],
+      roster: this.phase === "reveal" || this.phase === "end" ? this.ranked().map((o) => ({ id: o.id, name: o.name, emoji: o.emoji, score: o.score, rank: this.rankOf(o), delta: r?.results[o.id]?.delta ?? 0 })) : [],
     };
   }
 
