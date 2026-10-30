@@ -297,8 +297,9 @@ body.gm-host #cpbtn { display: block; }
   .me .sc { font-size: 1.3rem; background: #ffd23f1a; border-radius: 999px; padding: 4px 14px; }
   .phone .qtext { font-size: clamp(1.6rem, 2.6vw, 2.2rem); margin: 8px 0; }
   .phone .modbadge { align-self: center; }
-  .answers, .answers.many { grid-template-columns: 1fr 1fr; gap: 14px; }
-  .answer { min-height: 96px; font-size: 1.3rem; padding: 20px 22px; border-radius: 18px; transition: transform .1s, filter .1s; }
+  /* one compact row of answers; wraps to two rows when the window is narrow or there are many */
+  .answers, .answers.many { grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 10px; }
+  .answer { min-height: 64px; font-size: 1.1rem; padding: 12px 16px; border-radius: 14px; box-shadow: 0 4px 0 #0006; transition: transform .1s, filter .1s; }
   .answer:hover { transform: translateY(-2px); filter: brightness(1.1); }
   .powers { max-width: 560px; width: 100%; align-self: center; }
   .phone .center { flex: none; align-self: center; width: min(100%, 560px); background: var(--surface); border: 1px solid var(--border); border-radius: 24px; padding: 36px 32px; }
@@ -565,7 +566,7 @@ const params = new URLSearchParams(location.search);
 const API = location.hostname.endsWith("github.io") ? "https://retro-rumble.zancato-t.workers.dev" : location.origin;
 
 // Must match VERSION in src/index.ts. GitHub Pages caches the page for ~10 minutes, so an old tab can outlive a deploy.
-const BUILD = "2026-10-30.1";
+const BUILD = "2026-10-30.2";
 let endTimer = 0;
 let ws = null, role = null, room = null, state = null, offset = 0, lastKey = "", seenPlayers = new Set();
 let mine = null, mineState = null, mineFrozen = false; // the host's own player seat in Play-along mode
@@ -1559,7 +1560,7 @@ function renderPlayer(fresh) {
         : answered
         ? `<div class="center"><div class="huge">🤞</div><h2 class="display">Locked in</h2><p>${esc(pickedText)}</p>${me.allInActive ? `<p class="up"><b>🎲 ALL-IN</b></p>` : ""}</div>`
         : `<div><div class="answers ${s.q.options.length > 4 ? "many" : ""}">
-            ${s.q.options.map((o, pos) => s.q.kind === "who" && o.text === `${me.emoji} ${me.name}` ? "" : `<button class="answer ${fresh ? "pop" : ""}" data-i="${o.i}" style="${tileStyle(byPos ? pos : o.i)}"><span>${SHAPES[(byPos ? pos : o.i) % SHAPES.length]}</span><span>${esc(o.text)}</span>${pos < 9 ? `<kbd>${pos + 1}</kbd>` : ""}</button>`).join("")}
+            ${s.q.options.map((o, pos) => s.q.kind === "who" && o.text === `${me.emoji} ${me.name}` ? "" : `<button class="answer ${fresh ? "pop" : ""}" data-i="${o.i}" style="${tileStyle(byPos ? pos : o.i)}"><span>${SHAPES[(byPos ? pos : o.i) % SHAPES.length]}</span><span>${s.q.kind === "quiz" ? esc(o.text) : esc(o.text).replace(" ", "&nbsp;") /* keep "🦊 Name" on one line */}</span>${pos < 9 ? `<kbd>${pos + 1}</kbd>` : ""}</button>`).join("")}
           </div></div>`}
       ${powersHTML(s, answered)}
       ${overlaysHTML(me)}`;
