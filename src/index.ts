@@ -53,6 +53,7 @@ interface Player {
   banana: boolean; // buttons reshuffled this question
   swapPending: boolean;
   lastReact: number;
+  combo: { e: string; t: number }[]; // recent reactions, for the badger combo
   lastGuess: number;
   num: number; // closest guess
   pct: number; // hot take: predicted % of the team that agrees
@@ -261,7 +262,7 @@ function cleanSettings(raw: unknown, prev: Settings): Settings {
 }
 
 // Bump together with BUILD in public/index.html: pages with an older BUILD ask to be refreshed.
-const VERSION = "2026-10-30.8";
+const VERSION = "2026-10-30.9";
 const SPIN_MS = 6500;
 const INTRO_MS = 5000;
 const FREEZE_MS = 5000;
@@ -480,6 +481,7 @@ export class Room extends DurableObject<Env> {
   secretType = ""; // perform: "song" or "movie"
   secretSearch = ""; // perform: iTunes search term for the preview clip
   passes = 0;
+  lastCombo = 0;
   hintTimers: ReturnType<typeof setTimeout>[] = [];
   robinUsed = false;
 
@@ -533,7 +535,7 @@ export class Room extends DurableObject<Env> {
         emoji: chosen || pick(AVATARS.filter((a) => !used.has(a)).concat(used.size >= AVATARS.length ? AVATARS : [])),
         score: 0, streak: 0, answer: null, answeredAt: 0, perm: null,
         allInUsed: false, allInActive: false, prank: pick(PRANKS), frozenUntil: 0, frozenBy: "",
-        fogUntil: 0, fogBy: "", banana: false, swapPending: false, lastReact: 0, lastGuess: 0, num: 0, pct: 50, text: "", drawn: 0, performer: false, performed: 0, titles: [], stats: freshStats(),
+        fogUntil: 0, fogBy: "", banana: false, swapPending: false, lastReact: 0, combo: [], lastGuess: 0, num: 0, pct: 50, text: "", drawn: 0, performer: false, performed: 0, titles: [], stats: freshStats(),
       };
       this.players.set(id, p);
     }
@@ -807,6 +809,14 @@ export class Room extends DurableObject<Env> {
       p.lastReact = now;
       p.stats.reacts++;
       this.toAllBut("", { t: "react", e }); // every screen, so remote players see each other's reactions too
+      // Badger badger badger… mushroom mushroom… snake! Sent in that order within a few seconds plays the meme everywhere.
+      p.combo = [...p.combo.filter((c) => now - c.t < 6000), { e, t: now }].slice(-6);
+      const seq = p.combo.map((c) => c.e).join("");
+      if (e === "🐍" && /🦡+🍄+🐍$/u.test(seq) && now - this.lastCombo > 8000) {
+        this.lastCombo = now;
+        p.combo = [];
+        this.toAllBut("", { t: "combo", name: p.name, emoji: p.emoji });
+      }
     }
   }
 
