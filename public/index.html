@@ -660,7 +660,7 @@ const params = new URLSearchParams(location.search);
 const API = location.hostname.endsWith("github.io") ? "https://retro-rumble.zancato-t.workers.dev" : location.origin;
 
 // Must match VERSION in src/index.ts. GitHub Pages caches the page for ~10 minutes, so an old tab can outlive a deploy.
-const BUILD = "2026-10-30.23";
+const BUILD = "2026-10-30.24";
 let endTimer = 0, avOpen = false; // avOpen: the lobby avatar picker stays open across re-renders
 let ws = null, role = null, room = null, state = null, offset = 0, lastKey = "", seenPlayers = new Set();
 let mine = null, mineState = null; // the host's own player seat in Play-along mode
@@ -1143,6 +1143,12 @@ function boardHTML(s, r) {
           </div>`;
 }
 
+// The big screen's "locked in" row: new avatars join the end, the others stay put.
+function liveRow(done, live) {
+  if (!$("#live .faces")) $("#live").innerHTML = `<span class="count"></span><span class="muted">locked in</span><span class="faces" style="display:contents"></span>`;
+  $("#live .count").textContent = `${done.length}/${live.length}`;
+  patchRow($("#live .faces"), done.map((p) => ({ key: p.id, cls: `in ${p.allIn ? "allin" : ""}`, title: p.name, html: p.emoji })));
+}
 function renderHost(fresh) {
   const s = state;
   if (s.phase === "lobby") {
@@ -1296,8 +1302,7 @@ function renderHost(fresh) {
     }
     if (s.q.kind !== "drawoff") {
       const live = s.players.filter((p) => p.connected && !s.bench.includes(p.id)), done = s.players.filter((p) => p.answered);
-      $("#live").innerHTML = `<span class="count">${done.length}/${live.length}</span><span class="muted">locked in</span>` +
-        done.map((p) => `<span class="in ${p.allIn ? "allin" : ""}" title="${esc(p.name)}">${p.emoji}</span>`).join("");
+      liveRow(done, live);
     }
     return;
   }
@@ -1377,8 +1382,7 @@ function renderHost(fresh) {
     }
     const live = s.players.filter((p) => p.connected && !s.bench.includes(p.id));
     const done = s.players.filter((p) => p.answered);
-    $("#live").innerHTML = `<span class="count">${done.length}/${live.length}</span><span class="muted">locked in</span>` +
-      done.map((p) => `<span class="in ${p.allIn ? "allin" : ""}" title="${esc(p.name)}">${p.emoji}</span>`).join("");
+    liveRow(done, live);
     return;
   }
 
@@ -1538,7 +1542,22 @@ function bindPowers() {
 }
 const reactsHTML = () => `<div class="reacts">${REACTIONS.map((e) => `<button data-e="${e}">${e}</button>`).join("")}</div>`;
 const bindReacts = () => document.querySelectorAll(".reacts button").forEach((b) => (b.onclick = () => psend({ t: "react", e: b.dataset.e })));
-const lineupHTML = (s) => s.lineup?.length ? `<div class="lineup">${s.lineup.map((p) => `<span class="${p.done ? "done" : ""}" title="${esc(p.name)}${p.done ? " · locked in" : ""}">${p.emoji}</span>`).join("")}</div>` : "";
+// Updates a row of avatars in place, so only the one that changed animates instead of the whole row.
+// items: [{ key, cls, title, html }]. New items at the end are appended; any other change redraws the row.
+function patchRow(el, items) {
+  if (!el) return;
+  const kids = [...el.children];
+  const prefix = kids.length <= items.length && kids.every((k, i) => k.dataset.k === items[i].key);
+  if (!prefix) el.innerHTML = "";
+  items.forEach((it, i) => {
+    let k = prefix ? kids[i] : null;
+    if (!k) { k = document.createElement("span"); k.dataset.k = it.key; k.innerHTML = it.html; el.append(k); }
+    if (k.className !== it.cls) k.className = it.cls;
+    if (k.title !== it.title) k.title = it.title;
+  });
+}
+const lineupHTML = (s) => s.lineup?.length ? `<div class="lineup"></div>` : "";
+const patchLineup = (s) => patchRow($(".lineup"), (s.lineup ?? []).map((p) => ({ key: p.emoji + p.name, cls: p.done ? "done" : "", title: `${p.name}${p.done ? " · locked in" : ""}`, html: p.emoji })));
 const meHead = (s) => `<div class="me"><span class="av">${s.me.emoji}</span>${esc(s.me.name)}${s.phase !== "lobby" ? `<span class="rank">#${s.me.rank} of ${s.playerCount}</span>` : ""}<span class="sc">${s.me.score}</span></div>`;
 
 // The player's reveal: your result up top, then two columns: what everyone answered
@@ -1707,7 +1726,8 @@ function renderInputPlayer() {
     }
   }
   $("#ihead").innerHTML = meHead(s);
-  $("#ilineup").innerHTML = lineupHTML(s);
+  if (!$("#ilineup").firstChild !== !s.lineup?.length) $("#ilineup").innerHTML = lineupHTML(s);
+  patchLineup(s);
   const frozen = serverNow() < me.frozenUntil;
   document.querySelectorAll("#inroot input, #inroot textarea, #inroot form button, #tlock").forEach((el) => (el.disabled = frozen || (el.id === "tlock" && !el.dataset.ready)));
   $("#ipowers").innerHTML = s.benched ? "" : powersHTML(s, done);
@@ -1794,6 +1814,7 @@ function renderPerformPlayer() {
   $("#doverlay").innerHTML = overlaysHTML(me);
 }
 
+let lastPlayer = { markup: "", node: null };
 function renderPlayer(fresh) {
   const s = P(), me = s.me;
   if (!(s.phase === "question" && s.q?.kind === "perform" && me.id === s.draw?.drawerId)) stopSnippet();
@@ -1829,7 +1850,7 @@ function renderPlayer(fresh) {
         : answered
         ? `<div class="center"><div class="huge">🤞</div><h2 class="display">Locked in</h2><p>${esc(pickedText)}</p>${me.allInActive ? `<p class="up"><b>🎲 ALL-IN</b></p>` : ""}</div>`
         : `<div><div class="answers ${s.q.options.length > 4 ? "many" : ""}">
-            ${s.q.options.map((o, pos) => s.q.kind === "who" && o.text === `${me.emoji} ${me.name}` ? "" : `<button class="answer ${fresh ? "pop" : ""}" data-i="${o.i}" style="${tileStyle(byPos ? pos : o.i)}"><span>${SHAPES[(byPos ? pos : o.i) % SHAPES.length]}</span><span>${s.q.kind === "quiz" ? esc(o.text) : esc(o.text).replace(" ", "&nbsp;") /* keep "🦊 Name" on one line */}</span>${pos < 9 ? `<kbd>${pos + 1}</kbd>` : ""}</button>`).join("")}
+            ${s.q.options.map((o, pos) => s.q.kind === "who" && o.text === `${me.emoji} ${me.name}` ? "" : `<button class="answer pop" data-i="${o.i}" style="${tileStyle(byPos ? pos : o.i)}"><span>${SHAPES[(byPos ? pos : o.i) % SHAPES.length]}</span><span>${s.q.kind === "quiz" ? esc(o.text) : esc(o.text).replace(" ", "&nbsp;") /* keep "🦊 Name" on one line */}</span>${pos < 9 ? `<kbd>${pos + 1}</kbd>` : ""}</button>`).join("")}
           </div></div>`}
       ${lineupHTML(s)}
       ${powersHTML(s, answered)}
@@ -1847,7 +1868,12 @@ function renderPlayer(fresh) {
     </div>`;
   }
 
-  app.innerHTML = `<div class="phone">${head}${body}</div>${reacts}`;
+  const markup = `<div class="phone">${head}${body}</div>${reacts}`;
+  // Someone locking in only changes the lineup: patch it rather than redrawing every button and avatar.
+  if (markup === lastPlayer.markup && app.firstElementChild === lastPlayer.node) return patchLineup(s);
+  app.innerHTML = markup;
+  lastPlayer = { markup, node: app.firstElementChild }; // other views replace the node, so this can't go stale
+  patchLineup(s);
   if (s.q?.kind === "dvote") paintSoon();
   document.querySelectorAll(".answer").forEach((b) => (b.onclick = () => { navigator.vibrate?.(30); psend({ t: "answer", i: +b.dataset.i }); }));
   bindReacts();
