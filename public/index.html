@@ -570,7 +570,7 @@ const params = new URLSearchParams(location.search);
 const API = location.hostname.endsWith("github.io") ? "https://retro-rumble.zancato-t.workers.dev" : location.origin;
 
 // Must match VERSION in src/index.ts. GitHub Pages caches the page for ~10 minutes, so an old tab can outlive a deploy.
-const BUILD = "2026-10-30.4";
+const BUILD = "2026-10-30.5";
 let endTimer = 0;
 let ws = null, role = null, room = null, state = null, offset = 0, lastKey = "", seenPlayers = new Set();
 let mine = null, mineState = null, mineFrozen = false; // the host's own player seat in Play-along mode
@@ -716,7 +716,7 @@ function connect() {
       state = msg;
       render();
     }
-    else if (msg.t === "ink" || msg.t === "inkAll" || msg.t === "inkClear") onInk(msg);
+    else if (msg.t.startsWith("ink")) onInk(msg);
     else if (msg.t === "event") toast(msg.text);
     else if (msg.t === "react") floatReact(msg.e);
   };
@@ -876,6 +876,7 @@ const pad = { c: INK_COLORS[0], w: 10 };
 function onInk(msg) {
   if (msg.t === "inkAll") ink = { qi: msg.qi, strokes: msg.strokes };
   else if (msg.t === "inkClear") ink.strokes = ink.strokes.filter((x) => (x.a || 0) !== msg.a);
+  else if (msg.t === "inkUndo") ink.strokes = ink.strokes.filter((x) => x.id !== msg.id);
   else {
     let st = ink.strokes.find((x) => x.id === msg.id);
     if (!st) ink.strokes.push((st = { id: msg.id, a: msg.a || 0, c: msg.c, w: msg.w, pts: [] }));
@@ -929,6 +930,20 @@ function mountPad(cv, a = 0) {
   cv.onpointermove = (e) => { if (cur) add(e); };
   cv.onpointerup = cv.onpointercancel = () => { flush(); clearInterval(timer); cur = null; };
 }
+// Takes back the artist's latest stroke here and on every other screen.
+function undoStroke() {
+  const cv = $("#pad");
+  if (!cv) return;
+  const a = +(cv.dataset.a || 0);
+  const last = [...ink.strokes].reverse().find((x) => (x.a || 0) === a);
+  if (!last) return;
+  ink.strokes = ink.strokes.filter((x) => x !== last);
+  paintSoon();
+  sendMsg({ t: "inkUndo", id: last.id });
+}
+document.addEventListener("keydown", (e) => {
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "z" && $("#pad") && !/INPUT|TEXTAREA/.test(document.activeElement?.tagName)) { e.preventDefault(); undoStroke(); }
+});
 const feedHTML = (feed) => feed.map((g) => g.text
   ? `<div><small>${g.emoji} ${esc(g.name)}</small>${esc(g.text)}</div>`
   : `<div class="ok">✅ ${g.emoji} ${esc(g.name)} got it!</div>`).join("");
@@ -1370,7 +1385,7 @@ function renderDrawPlayer() {
       ${artist ? `<div class="inkwrap"><canvas class="ink" id="pad" data-a="${ai}"></canvas></div>` : off ? duoHTML(s) : `<div><div class="inkwrap"><canvas class="ink"></canvas></div></div>`}
       ${artist
         ? `<div class="tools">${INK_COLORS.map((c) => `<button class="sw" data-c="${c}" style="background:${c}" title="${c === "#ffffff" ? "Eraser" : "Colour"}"></button>`).join("")}
-            <button class="sz" data-w="10">thin</button><button class="sz" data-w="28">thick</button><button class="sz" id="clear">🗑️ clear</button></div>`
+            <button class="sz" data-w="10">thin</button><button class="sz" data-w="28">thick</button><button class="sz" id="undo" title="Undo (Ctrl+Z)">↩️ undo</button><button class="sz" id="clear">🗑️ clear</button></div>`
         : off ? "" : `<div id="gbox"></div><div class="feed" id="dfeed"></div>`}
       <div id="dpowers"></div>
       <div id="doverlay"></div>
@@ -1382,6 +1397,7 @@ function renderDrawPlayer() {
       document.querySelectorAll(".tools [data-c]").forEach((b) => (b.onclick = () => { pad.c = b.dataset.c; tools(); }));
       document.querySelectorAll(".tools [data-w]").forEach((b) => (b.onclick = () => { pad.w = +b.dataset.w; tools(); }));
       $("#clear").onclick = () => { ink.strokes = ink.strokes.filter((x) => (x.a || 0) !== ai); paintSoon(); sendMsg({ t: "inkClear" }); };
+      $("#undo").onclick = undoStroke;
       tools();
     }
     paintSoon();

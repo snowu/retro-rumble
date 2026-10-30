@@ -261,7 +261,7 @@ function cleanSettings(raw: unknown, prev: Settings): Settings {
 }
 
 // Bump together with BUILD in public/index.html: pages with an older BUILD ask to be refreshed.
-const VERSION = "2026-10-30.4";
+const VERSION = "2026-10-30.5";
 const SPIN_MS = 6500;
 const INTRO_MS = 5000;
 const FREEZE_MS = 5000;
@@ -707,6 +707,13 @@ export class Room extends DurableObject<Env> {
       if (this.phase !== "question" || k < 0) return;
       this.strokes = this.strokes.filter((x) => x.a !== k);
       this.toAllBut(p.id, { t: "inkClear", a: k });
+    } else if (msg.t === "inkUndo") {
+      // Only your own strokes: in a draw-off each artist undoes on their own canvas.
+      const k = kind === "draw" ? (p.id === this.drawerId ? 0 : -1) : kind === "drawoff" ? this.artists.indexOf(p.id) : -1;
+      const id = String(msg.id ?? "");
+      if (this.phase !== "question" || k < 0 || !this.strokes.some((x) => x.id === id && x.a === k)) return;
+      this.strokes = this.strokes.filter((x) => x.id !== id);
+      this.toAllBut(p.id, { t: "inkUndo", id });
     } else if (msg.t === "performer") {
       if (isHostSeat(p)) return;
       p.performer = !!msg.on;
