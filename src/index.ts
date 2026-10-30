@@ -261,7 +261,7 @@ function cleanSettings(raw: unknown, prev: Settings): Settings {
 }
 
 // Bump together with BUILD in public/index.html: pages with an older BUILD ask to be refreshed.
-const VERSION = "2026-10-30.16";
+const VERSION = "2026-10-30.17";
 const SPIN_MS = 6500;
 const INTRO_MS = 5000;
 const FREEZE_MS = 5000;
@@ -1453,7 +1453,8 @@ export class Room extends DurableObject<Env> {
       // Everyone's picks and the standings, so phones show who answered what too.
       picks: this.phase === "reveal" && r ? r.picks : {},
       gotIt: this.phase === "reveal" && r?.draw ? r.draw.got : [],
-      roster: this.phase === "reveal" || this.phase === "end" ? this.ranked().map((o) => ({ id: o.id, name: o.name, emoji: o.emoji, score: o.score, rank: this.rankOf(o), delta: r?.results[o.id]?.delta ?? 0 })) : [],
+      roster: this.phase === "reveal" || this.phase === "end" ? this.ranked().map((o) => ({ id: o.id, name: o.name, emoji: o.emoji, score: o.score, rank: this.rankOf(o), delta: r?.results[o.id]?.delta ?? 0, was: this.phase === "reveal" ? r?.rankBefore[o.id] ?? 0 : 0 })) : [],
+      headline: this.phase === "reveal" && r ? r.headline : "",
     };
   }
 
