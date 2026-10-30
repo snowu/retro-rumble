@@ -264,7 +264,7 @@ function cleanSettings(raw: unknown, prev: Settings): Settings {
 }
 
 // Bump together with BUILD in public/index.html: pages with an older BUILD ask to be refreshed.
-const VERSION = "2026-10-30.18";
+const VERSION = "2026-10-30.19";
 const SPIN_MS = 6500;
 const INTRO_MS = 5000;
 const FREEZE_MS = 5000;
@@ -325,6 +325,58 @@ function parseQuestions(text: string): Question[] {
     }
   }
   return out.slice(0, 200);
+}
+
+// Trivia recap: one Wikipedia sentence about each trivia question, shown on the end screen
+// (there's no time to chat about them mid-game). Candidate articles come from quoted titles,
+// proper nouns, the answer and the question's keywords; the intro sentence sharing the most
+// words with the question and answer wins, and weak matches are dropped.
+interface Fact { qi: number; q: string; a: string; title: string; text: string }
+const FACT_STOP = new Set(("a an the of in on at to for from by with and or is are was were wasn isn be been what which who whom whose when where why how " +
+  "does did do this that these those it its as than then there their they his her he she you your known called name named first most many much " +
+  "following not true false originally made type example year years").split(" "));
+const factWords = (s: string) => (s.toLowerCase().match(/[a-z0-9]+/g) ?? []).filter((w) => w.length > 1 && !FACT_STOP.has(w));
+const stem5 = (w: string) => w.slice(0, 5);
+async function wikiApi(params: Record<string, string>): Promise<any> {
+  const url = new URL("https://en.wikipedia.org/w/api.php");
+  for (const [k, v] of Object.entries({ format: "json", formatversion: "2", ...params })) url.searchParams.set(k, v);
+  const res = await fetch(url.toString(), { headers: { "User-Agent": "retro-rumble (https://github.com/snowu/retro-rumble)" } }).catch(() => null);
+  return res?.ok ? res.json().catch(() => null) : null;
+}
+async function wikiSearch(q: string, n: number): Promise<string[]> {
+  if (!q.trim()) return [];
+  const d = await wikiApi({ action: "query", list: "search", srlimit: String(n), srsearch: q });
+  return (d?.query?.search ?? []).map((x: { title: string }) => x.title);
+}
+async function wikiFact(q: string, a: string, yesNo: boolean): Promise<{ title: string; text: string } | null> {
+  const kw = [...new Set(factWords(q))], aw = yesNo ? [] : factWords(a);
+  const quoted = [...q.matchAll(/["“]([^"”]{3,60})["”]/g)].slice(0, 2).map((m) => m[1]);
+  const proper = [...q.matchAll(/(?<!^)(?<![.?!] )\b([A-Z][\w'!-]*(?: (?:of |and |the |a )?[A-Z][\w'!-]*)*)/g)].slice(0, 2).map((m) => m[1]);
+  const found = await Promise.all([
+    ...quoted.map((x) => wikiSearch(x, 1)),
+    ...proper.map((x) => wikiSearch(x, 1)),
+    aw.length && !/^\d/.test(a) ? wikiSearch(a, 2) : [],
+    wikiSearch(kw.join(" "), 2),
+    aw.length ? wikiSearch([...kw, ...aw].join(" "), 2) : [],
+  ]);
+  const titles = [...new Set(found.flat())].slice(0, 8);
+  if (!titles.length) return null;
+  const d = await wikiApi({ action: "query", prop: "extracts", exintro: "1", explaintext: "1", redirects: "1", titles: titles.join("|") });
+  const K = new Set(kw.map(stem5)), A = new Set(aw.map(stem5));
+  let best: { score: number; title: string; text: string } | null = null;
+  for (const page of d?.query?.pages ?? []) {
+    const ex: string = page.extract ?? "";
+    if (ex.includes("may refer to")) continue; // disambiguation page
+    for (const sentence of ex.split(/(?<=[a-z0-9)]{2}[.!?])\s+(?=[A-Z])/)) {
+      if (sentence.length < 40 || sentence.length > 300 || sentence.includes("\n")) continue;
+      const ws = new Set(factWords(sentence).map(stem5));
+      const k = [...ws].filter((w) => K.has(w)).length, an = [...ws].filter((w) => A.has(w)).length;
+      if (k < 2 && !(k && an)) continue;
+      const score = k + 2 * an;
+      if (!best || score > best.score) best = { score, title: page.title, text: sentence };
+    }
+  }
+  return best && { title: best.title, text: best.text };
 }
 
 // Open Trivia DB (opentdb.com, CC BY-SA 4.0): free, no key, 50 per request, ~1 request per 5s per IP.
@@ -476,7 +528,10 @@ export class Room extends DurableObject<Env> {
   artists: string[] = []; // the two players in a draw-off
   spares: Question[] = []; // play along: trivia kept back to slot between "who wrote it" rounds
   strokes: Stroke[] = [];
+  cleared: { a: number; strokes: Stroke[] }[] = []; // wiped canvases, so a clear can be undone
   inkSize = 0;
+  game = 0; // bumped every start, so a late Wikipedia answer can't land in the next game
+  facts: Fact[] = [];
   feed: Guess[] = [];
   hintOrder: number[] = [];
   hintLevel = 0;
@@ -615,6 +670,8 @@ export class Room extends DurableObject<Env> {
       }
       this.qi = -1;
       this.robinUsed = false;
+      this.game++;
+      this.facts = [];
       this.nextQuestion();
     } else if (msg.t === "skip" && this.phase === "question") {
       this.doReveal();
@@ -711,8 +768,18 @@ export class Room extends DurableObject<Env> {
     } else if (msg.t === "inkClear") {
       const k = kind === "draw" ? (p.id === this.drawerId ? 0 : -1) : kind === "drawoff" ? this.artists.indexOf(p.id) : -1;
       if (this.phase !== "question" || k < 0) return;
+      this.cleared.push({ a: k, strokes: this.strokes.filter((x) => x.a === k) });
       this.strokes = this.strokes.filter((x) => x.a !== k);
       this.toAllBut(p.id, { t: "inkClear", a: k });
+    } else if (msg.t === "inkRestore") {
+      // Undo of a clear: the artist's latest wiped canvas comes back.
+      const k = kind === "draw" ? (p.id === this.drawerId ? 0 : -1) : kind === "drawoff" ? this.artists.indexOf(p.id) : -1;
+      let i = this.cleared.length - 1;
+      while (i >= 0 && this.cleared[i].a !== k) i--;
+      if (this.phase !== "question" || k < 0 || i < 0) return;
+      const [{ strokes }] = this.cleared.splice(i, 1);
+      this.strokes.push(...strokes);
+      this.toAllBut(p.id, { t: "inkRestore", strokes });
     } else if (msg.t === "inkUndo") {
       // Only your own strokes: in a draw-off each artist undoes on their own canvas.
       const k = kind === "draw" ? (p.id === this.drawerId ? 0 : -1) : kind === "drawoff" ? this.artists.indexOf(p.id) : -1;
@@ -847,6 +914,7 @@ export class Room extends DurableObject<Env> {
       this.asked.add(word);
       this.cur = { ...q, text: word };
       this.strokes = [];
+      this.cleared = [];
       this.inkSize = 0;
       this.feed = [];
       this.hintLevel = 0;
@@ -869,6 +937,7 @@ export class Room extends DurableObject<Env> {
       this.asked.add(word);
       this.cur = { ...q, text: word, artists: this.artists };
       this.strokes = [];
+      this.cleared = [];
       this.inkSize = 0;
     } else if (q.kind === "dvote") {
       const pair = this.artists.map((id) => this.players.get(id));
@@ -884,6 +953,7 @@ export class Room extends DurableObject<Env> {
       return this.nextQuestion(); // who wrote it needs a few writers to be a guess
     } else {
       this.cur = q;
+      if (q.kind === "quiz" && q.options[q.correct]) this.lookUpFact(q);
     }
     // Robin Hood is a once-a-game outrage, and only once there's something to steal.
     const robinOk = !this.robinUsed && this.players.size >= 3 && this.qi >= 3;
@@ -1378,6 +1448,17 @@ export class Room extends DurableObject<Env> {
     return { id, ...MODS[id], ...(id === "speed" ? { desc: `${speedMs(this.settings) / 1000} seconds. Go.` } : {}) };
   }
 
+  // Runs in the background while the question plays; the end screen lists whatever came back.
+  private lookUpFact(q: Question): void {
+    const game = this.game, qi = this.qi, a = q.options[q.correct];
+    const yesNo = q.options.length === 2 && q.options.every((o) => /^(true|false)$/i.test(o));
+    wikiFact(q.text, a, yesNo).then((f) => {
+      if (!f || game !== this.game) return;
+      this.facts.push({ qi, q: q.text, a, ...f });
+      if (this.phase === "end") this.broadcast(); // the last question's lookup can finish after the podium
+    }).catch(() => {});
+  }
+
   private common() {
     return {
       t: "state",
@@ -1395,6 +1476,7 @@ export class Room extends DurableObject<Env> {
       modIndex: this.modIndex,
       now: Date.now(),
       wheelOn: this.wheelOn(),
+      facts: this.phase === "end" ? [...this.facts].sort((x, y) => x.qi - y.qi) : [],
       ver: VERSION,
     };
   }

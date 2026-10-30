@@ -366,6 +366,7 @@ body.drawing #toasts { top: 12px; bottom: auto; } /* keep toasts off the palette
 .tools .sw.on { border-color: var(--yellow); }
 .tools .sz { background: var(--surface); border: 2px solid var(--line); border-radius: 10px; padding: 6px 10px; font-weight: 800; }
 .tools .sz.on { border-color: var(--yellow); }
+.tools .sz.far { margin-left: 28px; } /* clear sits apart from undo, away from stray clicks */
 .gform { display: flex; gap: 8px; } .gform input { flex: 1; min-width: 0; } .gform button { padding: 0 18px; border-radius: 12px; background: var(--pink); font-weight: 800; }
 #mybar .gform input { padding: 8px 12px; width: 260px; }
 #mybar .takebtns.mini { display: flex; gap: 6px; } #mybar .takebtns.mini button { padding: 8px 14px; font-size: 1rem; border-radius: 12px; }
@@ -430,8 +431,16 @@ body.drawing #toasts { top: 12px; bottom: auto; } /* keep toasts off the palette
 .secret { background: var(--surface); border: 2px solid var(--yellow); border-radius: 20px; padding: 20px; text-align: center; display: grid; gap: 6px; }
 .secret b { font-family: Bungee, "Noto Color Emoji", sans-serif; font-size: clamp(1.6rem, 7vw, 2.6rem); color: var(--yellow); line-height: 1.1; }
 .rules { display: grid; gap: 6px; text-align: center; color: var(--muted); font-weight: 600; }
-.perfbtn { border-radius: 14px; padding: 14px 18px; font-weight: 800; background: var(--surface); border: 2px dashed var(--line); color: var(--muted); }
-.perfbtn.on { border: 2px solid var(--yellow); color: var(--ink); background: #ffd23f1a; }
+.perfbtn { border-radius: 16px; padding: 14px 18px; font-weight: 800; font-size: 1.05rem; line-height: 1.35; background: #ff3d9a1f; border: 2px solid var(--pink); color: var(--ink); animation: perfglow 2.4s ease-in-out infinite; }
+.perfbtn small { display: block; font-weight: 600; font-size: .85rem; color: var(--muted); margin-top: 4px; }
+.perfbtn.on { border-color: var(--yellow); background: #ffd23f1f; animation: none; }
+@keyframes perfglow { 50% { box-shadow: 0 0 22px #ff3d9a66; } }
+.perfchip { justify-self: center; border-radius: 999px; padding: 8px 16px; font-weight: 800; background: #ff3d9a1f; border: 2px solid var(--pink); color: var(--ink); }
+.perfchip.on { border-color: var(--line); background: var(--surface); color: var(--muted); font-weight: 600; }
+.facts { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 320px), 1fr)); gap: 10px; width: 100%; text-align: left; }
+.fact { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 12px 14px; display: grid; gap: 6px; align-content: start; }
+.fact p { margin: 0; line-height: 1.45; }
+.fact a { color: var(--cyan); font-size: .85rem; font-weight: 700; text-decoration: none; }
 .bubble .mic { font-size: 1rem; }
 .lineup { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; }
 .lineup span { width: 42px; height: 42px; display: grid; place-items: center; font-size: 1.5rem; border-radius: 50%; border: 2px solid var(--line); opacity: .35; filter: grayscale(.6); transition: all .25s; }
@@ -647,7 +656,7 @@ const params = new URLSearchParams(location.search);
 const API = location.hostname.endsWith("github.io") ? "https://retro-rumble.zancato-t.workers.dev" : location.origin;
 
 // Must match VERSION in src/index.ts. GitHub Pages caches the page for ~10 minutes, so an old tab can outlive a deploy.
-const BUILD = "2026-10-30.18";
+const BUILD = "2026-10-30.19";
 let endTimer = 0, avOpen = false; // avOpen: the lobby avatar picker stays open across re-renders
 let ws = null, role = null, room = null, state = null, offset = 0, lastKey = "", seenPlayers = new Set();
 let mine = null, mineState = null; // the host's own player seat in Play-along mode
@@ -999,10 +1008,17 @@ const INK_COLORS = ["#111111", "#ffffff", "#e53935", "#1e88e5", "#43a047", "#fdd
 let ink = { qi: -1, strokes: [] }, inkQueued = false;
 const myStrokes = new Set(); // strokes drawn here: the host page gets them echoed back on its host socket
 const pad = { c: INK_COLORS[0], w: 10 };
+// What the artist did this question, newest last, so undo can take back strokes and clears alike.
+let padHist = { qi: -1, steps: [] };
+const padSteps = () => {
+  if (padHist.qi !== P().qi) padHist = { qi: P().qi, steps: [] };
+  return padHist.steps;
+};
 function onInk(msg) {
   if (msg.t === "inkAll") ink = { qi: msg.qi, strokes: msg.strokes };
   else if (msg.t === "inkClear") ink.strokes = ink.strokes.filter((x) => (x.a || 0) !== msg.a);
   else if (msg.t === "inkUndo") ink.strokes = ink.strokes.filter((x) => x.id !== msg.id);
+  else if (msg.t === "inkRestore") ink.strokes.push(...msg.strokes.filter((st) => !ink.strokes.some((x) => x.id === st.id)));
   else if (myStrokes.has(msg.id)) return;
   else {
     let st = ink.strokes.find((x) => x.id === msg.id);
@@ -1052,22 +1068,38 @@ function mountPad(cv, a = 0) {
     cur = { id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6), a, c: pad.c, w: pad.w, pts: [] };
     ink.strokes.push(cur);
     myStrokes.add(cur.id);
+    padSteps().push({ stroke: cur.id });
     add(e);
     timer = setInterval(flush, 60);
   };
   cv.onpointermove = (e) => { if (cur) add(e); };
   cv.onpointerup = cv.onpointercancel = () => { flush(); clearInterval(timer); cur = null; };
 }
-// Takes back the artist's latest stroke here and on every other screen.
+// Takes back the artist's latest stroke, or brings back a cleared canvas, here and on every other screen.
 function undoStroke() {
   const cv = $("#pad");
   if (!cv) return;
   const a = +(cv.dataset.a || 0);
-  const last = [...ink.strokes].reverse().find((x) => (x.a || 0) === a);
+  const step = padSteps().pop();
+  if (step?.cleared) {
+    ink.strokes.push(...step.cleared);
+    paintSoon();
+    return psend({ t: "inkRestore" });
+  }
+  // No history after a reload: fall back to the newest stroke on this canvas.
+  const last = step ? ink.strokes.find((x) => x.id === step.stroke) : [...ink.strokes].reverse().find((x) => (x.a || 0) === a);
   if (!last) return;
   ink.strokes = ink.strokes.filter((x) => x !== last);
   paintSoon();
   psend({ t: "inkUndo", id: last.id });
+}
+function clearPad(a) {
+  const wiped = ink.strokes.filter((x) => (x.a || 0) === a);
+  if (!wiped.length) return;
+  padSteps().push({ cleared: wiped });
+  ink.strokes = ink.strokes.filter((x) => (x.a || 0) !== a);
+  paintSoon();
+  psend({ t: "inkClear" });
 }
 document.addEventListener("keydown", (e) => {
   if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "z" && $("#pad") && !/INPUT|TEXTAREA/.test(document.activeElement?.tagName)) { e.preventDefault(); undoStroke(); }
@@ -1193,7 +1225,7 @@ function renderHost(fresh) {
       const perfLabel = () => {
         const on = store.get("rr-hostperform") === "1";
         $("#hostperf").classList.toggle("on", on);
-        $("#hostperf").innerHTML = on ? "🎤 You're on the performer list. Click to opt out" : "🎤 Happy to hum &amp; mime a song or movie too? Click to opt in";
+        $("#hostperf").innerHTML = perfText(on, "Click");
       };
       $("#hostperf").onclick = () => { store.set("rr-hostperform", store.get("rr-hostperform") === "1" ? "" : "1"); perfLabel(); };
       perfLabel();
@@ -1452,6 +1484,7 @@ function renderHost(fresh) {
           <div class="podium">${col(b, "p2", 2)}${col(a, "p1", 1)}${col(c, "p3", 3)}</div>
           <div class="rest">${state.players.slice(3).map((p) => `${p.rank}. ${p.emoji} ${esc(p.name)} · ${p.score}`).join(" &nbsp;·&nbsp; ")}</div>
           <div class="lobby-actions">${state.awards.length ? `<button class="ghost" id="reawards">🏅 Awards again</button>` : ""}<button class="big" id="again">Run it back 🔁</button></div>
+          <div style="width:min(100%,1100px)">${factsHTML(state.facts)}</div>
         </div>`;
       sfx.fanfare();
       setTimeout(confetti, 1300);
@@ -1501,6 +1534,18 @@ const meHead = (s) => `<div class="me"><span class="av">${s.me.emoji}</span>${es
 
 // The player's reveal: your result up top, then two columns: what everyone answered
 // (one slim row per answer: vote bar, count, avatars) and the standings (top 5 + you).
+// Perform it is opt-in, so the invite is loud in the lobby and stays one tap away between rounds.
+const perfText = (on, verb) => on
+  ? `🎤 You're in the performer pool!<small>${verb} to opt out</small>`
+  : `🎤 Up for Perform it? Hum or mime a song or movie on the call while everyone guesses<small>${verb} to opt in, you can still pass on one you don't know</small>`;
+const perfBtnHTML = (on, verb) => `<button class="perfbtn ${on ? "on" : ""}" id="perfbtn">${perfText(on, verb)}</button>`;
+const perfChipHTML = (s) => s.mode !== "play" ? ""
+  : `<button class="perfchip ${s.me.performer ? "on" : ""}" id="perfbtn">${s.me.performer ? "🎤 You're a performer · opt out" : "🎤 Want a turn performing? Opt in"}</button>`;
+// The trivia recap on the end screen: a line from Wikipedia about each trivia question.
+const factsHTML = (facts) => !facts?.length ? "" : `<h2 class="display" style="text-align:center;margin:0">📚 Trivia recap</h2>
+  <div class="facts">${facts.map((f) => `<div class="fact"><small class="muted">${esc(f.q)}</small><b>✅ ${esc(f.a)}</b><p>${esc(f.text)}</p>
+    <a href="https://en.wikipedia.org/wiki/${encodeURIComponent(f.title.replaceAll(" ", "_"))}" target="_blank" rel="noopener">Wikipedia: ${esc(f.title)} ↗</a></div>`).join("")}</div>`;
+
 function playerRevealHTML(s) {
   const me = s.me, r = s.result || { delta: 0, correct: null, note: "" }, k = s.q?.kind;
   const byId = Object.fromEntries(s.roster.map((p) => [p.id, p]));
@@ -1546,6 +1591,7 @@ function playerRevealHTML(s) {
     ${answer ? `<p class="panswer">${answer}</p>` : ""}
     <div class="rv2"><div class="olist">${what}</div><div class="pboard"><div class="board-title">Standings</div>${list.map(standing).join("")}</div></div>
     ${role === "player" ? `<p class="muted" style="text-align:center;margin:0">⏳ Next round when the host is ready</p>` : ""}
+    ${perfChipHTML(s)}
   </div>`;
 }
 
@@ -1567,7 +1613,7 @@ function renderDrawPlayer() {
       ${artist ? `<div class="inkwrap"><canvas class="ink" id="pad" data-a="${ai}"></canvas></div>` : off ? duoHTML(s) : `<div><div class="inkwrap"><canvas class="ink"></canvas></div></div>`}
       ${artist
         ? `<div class="tools">${INK_COLORS.map((c) => `<button class="sw" data-c="${c}" style="background:${c}" title="${c === "#ffffff" ? "Eraser" : "Colour"}"></button>`).join("")}
-            <button class="sz" data-w="10">thin</button><button class="sz" data-w="28">thick</button><button class="sz" id="undo" title="Undo (Ctrl+Z)">↩️ undo</button><button class="sz" id="clear">🗑️ clear</button></div>`
+            <button class="sz" data-w="10">thin</button><button class="sz" data-w="28">thick</button><button class="sz" id="undo" title="Undo (Ctrl+Z)">↩️ undo</button><button class="sz far" id="clear" title="Clear (undo brings it back)">🗑️ clear</button></div>`
         : off ? "" : `<div id="gbox"></div><div class="feed" id="dfeed"></div>`}
       <div id="dpowers"></div>
       <div id="doverlay"></div>
@@ -1578,7 +1624,7 @@ function renderDrawPlayer() {
       const tools = () => document.querySelectorAll(".tools [data-c], .tools [data-w]").forEach((b) => b.classList.toggle("on", b.dataset.c === pad.c || +b.dataset.w === pad.w));
       document.querySelectorAll(".tools [data-c]").forEach((b) => (b.onclick = () => { pad.c = b.dataset.c; tools(); }));
       document.querySelectorAll(".tools [data-w]").forEach((b) => (b.onclick = () => { pad.w = +b.dataset.w; tools(); }));
-      $("#clear").onclick = () => { ink.strokes = ink.strokes.filter((x) => (x.a || 0) !== ai); paintSoon(); psend({ t: "inkClear" }); };
+      $("#clear").onclick = () => clearPad(ai);
       $("#undo").onclick = undoStroke;
       tools();
     }
@@ -1746,7 +1792,7 @@ function renderPlayer(fresh) {
       <div id="avbox" style="${avOpen ? "" : "display:none;"}width:100%">${avatarPickerHTML(me.emoji)}</div><h2 class="display pop">You're in!</h2>
       <p class="muted">Waiting for the host to start. ${s.playerCount} player${s.playerCount > 1 ? "s" : ""} so far.</p>
       ${s.powerups ? `<p class="muted">🎲 <b>All-in</b> once per game, plus a prank card: ${PRANK_INFO[me.prank]?.[0] ?? "🃏"} <b>${esc(PRANK_INFO[me.prank]?.[1] ?? "a prank")}</b>. Used cards get refilled every few questions.</p>` : ""}
-      <button class="perfbtn ${me.performer ? "on" : ""}" id="perfbtn">${me.performer ? "🎤 You're on the performer list. Tap to opt out" : "🎤 Happy to hum &amp; mime a song or movie on the call? Tap to opt in"}</button></div>`;
+      ${perfBtnHTML(me.performer, "Tap")}</div>`;
   } else if (s.phase === "spin") {
     body = s.wheelOn ? `<div class="phone-wheel">${wheelHTML(s)}</div>` : introHTML(s);
   } else if (s.phase === "question" && s.q) {
@@ -1779,6 +1825,7 @@ function renderPlayer(fresh) {
       <div class="presult pop"><span class="picon">${medal}</span><span class="result-delta">#${me.rank} of ${s.playerCount}</span><span class="pnote">${me.score} points · GG, now back to the action items</span></div>
       <div class="pboard">${s.roster.map((p) => `<div class="pb ${p.id === me.id ? "mine" : ""}"><span>${["🥇", "🥈", "🥉"][p.rank - 1] || p.rank}</span><span>${p.emoji} ${esc(p.name)}</span><small></small><b>${p.score}</b></div>`).join("")}</div>
       ${s.awards.length ? `<h2 class="display" style="text-align:center;margin:0">Special awards</h2><div class="awards">${s.awards.map((a, k) => byId[a.id] ? `<div class="award" style="animation-delay:${0.3 + k * 0.25}s"><span class="ae">${a.emoji}</span><b>${esc(a.title)}</b><span class="who">${byId[a.id].emoji} ${esc(byId[a.id].name)}</span><small>${esc(a.desc)}</small></div>` : "").join("")}</div>` : ""}
+      ${factsHTML(s.facts)}
     </div>`;
   }
 
@@ -1787,7 +1834,10 @@ function renderPlayer(fresh) {
   document.querySelectorAll(".answer").forEach((b) => (b.onclick = () => { navigator.vibrate?.(30); psend({ t: "answer", i: +b.dataset.i }); }));
   bindReacts();
   bindPowers();
-  $("#perfbtn") && ($("#perfbtn").onclick = () => psend({ t: "performer", on: !me.performer }));
+  $("#perfbtn") && ($("#perfbtn").onclick = () => {
+    if (hostPlaying()) store.set("rr-hostperform", me.performer ? "" : "1"); // the host seat re-syncs to this setting
+    psend({ t: "performer", on: !me.performer });
+  });
   if ($("#myav")) {
     $("#myav").onclick = () => { avOpen = !avOpen; $("#avbox").style.display = avOpen ? "" : "none"; };
     bindAvatarPicker($("#avbox"), (e) => { avOpen = false; psend({ t: "avatar", e }); });

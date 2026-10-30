@@ -1,11 +1,11 @@
 # Retro Rumble
 
-Chaotic multiplayer quiz for sprint retros. One person hosts on the shared screen, everyone else plays from their phone.
+Chaotic multiplayer quiz for sprint retros. Everyone plays from their own phone or PC; the host runs the room from theirs.
 
 **Play:** https://snowu.github.io/retro-rumble/
 
 - 🎡 A chaos wheel before every question: Double Trouble, Speed Demon, Minefield, Heist, Jackpot, Contrarian, Opposite Day, and a once-a-game Robin Hood that swaps first and last place
-- 🎨 Draw rounds: a random player draws a secret word on their phone, everyone else types guesses; letters get revealed as time runs out
+- 🎨 Draw rounds: a random player draws a secret word on their phone, everyone else types guesses; letters get revealed as time runs out. Undo takes back strokes and clears
 - 🎤 Perform it: an opted-in volunteer hums and mimes a song or movie on the call, everyone else guesses (with an optional 30s preview clip from Apple Music for the performer)
 - 🖌️ Draw-offs: two players draw the same word at once, the room votes for the best one
 - 📏 Closest wins: number questions on fixed, checkable facts; nearest guess takes the points
@@ -16,6 +16,7 @@ Chaotic multiplayer quiz for sprint retros. One person hosts on the shared scree
 - 🎤 The big screen roasts the room after each reveal
 - 🏅 Special awards before the podium: Overconfident, Sloth, Lone Wolf, Keyboard Warrior, Ghost, Participation Trophy…
 - 🔥 Streaks, live emoji reactions, podium and confetti
+- 📚 A trivia recap on the end screen: a sentence from Wikipedia about each trivia question, to chat about after the game
 
 Two host modes, picked in the lobby:
 
