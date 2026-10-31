@@ -266,7 +266,7 @@ function cleanSettings(raw: unknown, prev: Settings): Settings {
 }
 
 // Bump together with BUILD in public/index.html: pages with an older BUILD ask to be refreshed.
-const VERSION = "2026-10-30.24";
+const VERSION = "2026-10-31.1";
 const SPIN_MS = 6500;
 // Bots fill a room for testing: they count as connected, answer at random moments and never draw or perform.
 const BOT_WS = { send() {}, close() {} } as unknown as WebSocket;

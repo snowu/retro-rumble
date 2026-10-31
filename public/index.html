@@ -321,7 +321,11 @@ body.gm-host #cpbtn { display: block; }
   .phone > :first-child + * { margin-top: auto; }
   .phone::after { content: ""; margin-top: auto; } /* equal free space above and below = centred */
   .phone .duo .inkwrap { max-width: min(100%, 36vh); }
-  .phone .duo + .timer + .center { padding: 18px 24px; } .phone .duo + .timer + .center .huge { font-size: 3rem; }
+  /* status cards (locked in, sent, on trial…): emoji beside the text, not stacked */
+  .phone .center:has(> .huge:first-child) { grid-template-columns: auto auto; justify-content: center; justify-items: start; text-align: left; gap: 2px 22px; padding: 18px 32px; width: auto; min-width: min(100%, 420px); }
+  .phone .center > .huge:first-child { grid-row: span 4; font-size: 3.6rem; }
+  .phone .center:has(> .huge:first-child) > * { margin: 0; }
+  .phone .center:has(> .huge:first-child) .display { font-size: 1.5rem; }
   .phone .inkwrap { max-width: min(100%, 52vh); }
   .phone .intro { flex: none; }
   .reacts { left: 50%; right: auto; bottom: 16px; transform: translateX(-50%); border: 1px solid var(--border); border-radius: 999px; padding: 6px 12px; background: var(--surface); }
@@ -355,6 +359,19 @@ body.gm-host #cpbtn { display: block; }
 .drawside { display: grid; gap: 14px; align-content: start; }
 .dwho { font-size: 1.4rem; font-weight: 700; } .dwho b { color: var(--yellow); }
 .dhint { font-family: ui-monospace, monospace, "Noto Color Emoji"; font-weight: 800; font-size: clamp(1.6rem, 3vw, 2.6rem); letter-spacing: .35em; white-space: pre-wrap; }
+.dstage { display: grid; gap: 14px; }
+.dtop { display: grid; gap: 4px; text-align: center; }
+.dbottom:not(.tools) { display: grid; gap: 10px; }
+.gotit { text-align: center; margin: 0; }
+/* wide screens: the canvas on the left, who/word, guesses or tools stacked beside it */
+@media (min-width: 980px) {
+  .dstage.side2 { grid-template-columns: min(60vh, 56%) minmax(280px, 1fr); grid-template-areas: "canvas top" "canvas bottom"; grid-template-rows: auto 1fr; column-gap: 32px; align-items: start; }
+  .dstage.side2 .dcanvas { grid-area: canvas; } .dstage.side2 .dtop { grid-area: top; text-align: left; } .dstage.side2 .dbottom { grid-area: bottom; }
+  .phone .dstage.side2 .inkwrap { max-width: none; }
+  .dstage.side2 .dword, .dstage.side2 .gotit { text-align: left; } .dstage.side2 .dword b { font-size: 2.4rem; }
+  .dstage.side2 .tools { justify-content: flex-start; align-content: start; }
+  .dstage.side2 .feed { align-content: start; }
+}
 .feed { display: grid; gap: 6px; align-content: end; min-height: 200px; }
 .feed div { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 7px 12px; font-weight: 600; animation: pop .3s ease-out both; }
 .feed div.ok { background: #3ef08a22; border-color: var(--green); color: var(--green); font-weight: 800; }
@@ -382,8 +399,20 @@ body.drawing #toasts { top: 12px; bottom: auto; } /* keep toasts off the palette
 .host .duo.small { margin-top: 18px; } .host .duo.small .inkwrap { max-width: min(100%, 30vh); }
 .kindtag { text-align: center; }
 .preveal { display: grid; gap: 14px; width: 100%; max-width: 1100px; margin: 0 auto; }
-.phead { text-align: center; margin: -6px 0 0; color: var(--muted); font-weight: 700; }
-.panswer { text-align: center; margin: 0; font-size: 1.3rem; } .panswer b { color: var(--yellow); font-family: Bungee, "Noto Color Emoji", sans-serif; }
+.phero { display: grid; gap: 8px; justify-items: center; text-align: center; }
+.pinfo { display: grid; gap: 6px; }
+.pinfo p { margin: 0; }
+.pq { font-weight: 800; font-size: 1.2rem; line-height: 1.25; }
+.pmeta { color: var(--muted); font-weight: 700; }
+.pfoot { display: flex; flex-wrap: wrap; gap: 10px 18px; align-items: center; justify-content: center; text-align: center; }
+/* desktop: score on the left, question and what happened beside it, all in one card */
+@media (min-width: 760px) {
+  .phero { grid-template-columns: auto minmax(0, 1fr); align-items: center; justify-items: start; text-align: left; gap: 24px;
+    background: var(--surface); border: 1px solid var(--border); border-radius: 18px; padding: 16px 24px; }
+  .phero .presult { flex-wrap: nowrap; gap: 10px; min-width: 150px; } .phero .picon { font-size: 2.2rem; } .phero .result-delta { font-size: 2rem; }
+  .pq { font-size: clamp(1.3rem, 2vw, 1.7rem); }
+  .phero .pfact { margin: 2px 0 0; max-width: none; text-align: left; font-size: .95rem; }
+}
 .rv2 { display: grid; gap: 14px; align-items: start; }
 @media (min-width: 760px) { .rv2 { grid-template-columns: 1.7fr 1fr; } }
 .olist { display: grid; gap: 8px; }
@@ -410,7 +439,7 @@ body.drawing #toasts { top: 12px; bottom: auto; } /* keep toasts off the palette
 .pboard.dense .pb { padding: 4px 10px; font-size: 1rem; }
 .pbname { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .presult { display: flex; align-items: center; justify-content: center; gap: 14px; flex-wrap: wrap; text-align: center; }
-.presult .picon { font-size: 2.6rem; } .presult .result-delta { font-size: 2.4rem; } .pnote { width: 100%; font-weight: 700; color: var(--muted); font-size: 1.1rem; }
+.presult .picon { font-size: 2.6rem; } .presult .result-delta { font-size: 2.4rem; }
 .plist { display: grid; gap: 8px; grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr)); }
 /* on PC, up to 4 options share one row instead of wrapping the last one alone */
 @media (min-width: 760px) { .plist.n2 { grid-template-columns: repeat(2, 1fr); } .plist.n3 { grid-template-columns: repeat(3, 1fr); } .plist.n4 { grid-template-columns: repeat(4, 1fr); } .plist.many { grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); } }
@@ -463,6 +492,7 @@ body.drawing #toasts { top: 12px; bottom: auto; } /* keep toasts off the palette
 .takebtns button { border-radius: 16px; padding: 18px; font-size: 1.2rem; font-weight: 800; background: var(--surface); border: 2px solid var(--line); }
 .takebtns button.on[data-agree="1"] { background: #22c55e; border-color: #fff; } .takebtns button.on[data-agree="0"] { background: #ff3d6e; border-color: #fff; }
 .pctrow { display: grid; gap: 6px; text-align: center; font-weight: 700; } .pctrow b { font-family: Bungee, "Noto Color Emoji", sans-serif; font-size: 2rem; color: var(--yellow); }
+@media (min-width: 760px) { .pctrow { grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 18px; text-align: left; } .pctrow b { order: 2; text-align: right; } }
 input[type="range"] { padding: 0; border: 0; background: none; accent-color: var(--yellow); }
 textarea.win { min-height: 110px; font-size: 1.1rem; }
 .split { display: flex; height: 54px; border-radius: 14px; overflow: hidden; font-weight: 800; font-size: 1.2rem; }
@@ -660,7 +690,7 @@ const params = new URLSearchParams(location.search);
 const API = location.hostname.endsWith("github.io") ? "https://retro-rumble.zancato-t.workers.dev" : location.origin;
 
 // Must match VERSION in src/index.ts. GitHub Pages caches the page for ~10 minutes, so an old tab can outlive a deploy.
-const BUILD = "2026-10-30.24";
+const BUILD = "2026-10-31.1";
 let endTimer = 0, avOpen = false; // avOpen: the lobby avatar picker stays open across re-renders
 let ws = null, role = null, room = null, state = null, offset = 0, lastKey = "", seenPlayers = new Set();
 let mine = null, mineState = null; // the host's own player seat in Play-along mode
@@ -1588,7 +1618,7 @@ function playerRevealHTML(s) {
   const row = (color, shape, label, ids, win, extra = "") => `<div class="orow ${win ? "win" : ""}" style="--c:${color};--w:${Math.round((100 * ids.length) / total)}%">
     <span class="pchip">${shape}</span><span class="olabel">${label}</span>${win ? `<span class="pwin">✓</span>` : ""}
     <span class="obar"><i></i></span><span class="ocount">${ids.length}</span><span class="ofaces">${faces(ids)}</span>${extra}</div>`;
-  let what = "", answer = "";
+  let what = "";
   if (s.q && s.q.options.length) {
     const pickers = (i) => Object.entries(s.picks).filter(([, a]) => a === i).map(([id]) => id);
     const rows = s.q.options.map((o, pos) => ({ o, pos, ids: pickers(o.i) }));
@@ -1598,13 +1628,10 @@ function playerRevealHTML(s) {
     what = shown.map(({ o, pos, ids }) => row(COLORS[(me.banana ? pos : o.i) % COLORS.length], SHAPES[(me.banana ? pos : o.i) % SHAPES.length], esc(o.text), ids, s.winners.includes(o.i))).join("")
       + (empty.length ? `<p class="novotes">No votes: ${empty.map(({ o }) => esc(o.text)).join(", ")}</p>` : "");
   } else if (k === "hottake" && s.info) {
-    answer = `<b>${s.info.pct}%</b> of the team agree`;
     what = row("#22c55e", "👍", "Agree", s.info.agree, false) + row("#ff3d6e", "👎", "Disagree", s.info.disagree, false);
   } else if (k === "closest" && s.info) {
-    answer = `The answer: <b>${fmtNum(s.info.answer)}</b>`;
     what = s.info.guesses.map((g, n) => byId[g.id] ? `<div class="orow guess ${n === 0 ? "win" : ""}" style="--c:#2d8cff"><span class="rk">${["🥇", "🥈", "🥉"][n] || n + 1}</span><span class="olabel">${byId[g.id].emoji} ${esc(byId[g.id].name)}</span><b>${fmtNum(g.v)}</b><small class="muted">${g.diff === 0 ? "🎯 exact" : `off by ${fmtNum(g.diff)}`}</small></div>` : "").join("") || `<p class="muted">No guesses</p>`;
   } else if (k === "draw" || k === "perform") {
-    answer = `It was <b>${esc(s.q.text)}</b>`;
     what = s.gotIt.map((g, n) => byId[g.id] ? `<div class="orow guess ${n === 0 ? "win" : ""}" style="--c:#22c55e"><span class="rk">${["🥇", "🥈", "🥉"][n] || n + 1}</span><span class="olabel">${byId[g.id].emoji} ${esc(byId[g.id].name)}</span><b>${(g.t / 1000).toFixed(1)}s</b></div>` : "").join("") || `<p class="muted">Nobody got it 💀</p>`;
   }
   // Standings: everyone, in tighter rows for big groups. ▲▼ = places moved this round.
@@ -1613,15 +1640,21 @@ function playerRevealHTML(s) {
     const moved = p.was ? p.was - p.rank : 0;
     return `<div class="pb ${p.id === me.id ? "mine" : ""}"><span>${["🥇", "🥈", "🥉"][p.rank - 1] || p.rank}</span><span class="pbname">${p.emoji} ${esc(p.name)} ${moved > 0 ? `<small class="up">▲${moved}</small>` : moved < 0 ? `<small class="down">▼${-moved}</small>` : ""}</span><small class="${p.delta > 0 ? "up" : p.delta < 0 ? "down" : "muted"}">${p.delta > 0 ? "+" : ""}${p.delta || ""}</small><b>${p.score}</b></div>`;
   };
+  // One header card: your score on the left, the question with what happened beside it.
+  // The server headline already carries the answer (closest, hot take, draw), so it's not repeated.
+  const title = s.q && k !== "draw" && k !== "perform" ? esc(s.q.text) : "";
+  const meta = [r.note, s.headline].filter(Boolean).map(esc).join(" · ");
   return `<div class="preveal">
-    <div class="presult pop"><span class="picon">${icon}</span><span class="result-delta ${r.delta > 0 ? "up" : r.delta < 0 ? "down" : "muted"}">${r.delta > 0 ? "+" : ""}${r.delta}</span>${r.note ? `<span class="pnote">${esc(r.note)}</span>` : ""}</div>
-    ${s.headline ? `<p class="phead">${esc(s.headline)}</p>` : ""}
-    ${s.q && !answer ? `<p class="qtext small" style="margin:0">${esc(s.q.text)}</p>` : ""}
-    ${answer ? `<p class="panswer">${answer}</p>` : ""}
-    ${s.fact ? `<p class="pfact">📚 ${esc(s.fact.text)} <a href="${wikiURL(s.fact.title)}" target="_blank" rel="noopener">Wikipedia ↗</a></p>` : ""}
+    <div class="phero">
+      <div class="presult pop"><span class="picon">${icon}</span><span class="result-delta ${r.delta > 0 ? "up" : r.delta < 0 ? "down" : "muted"}">${r.delta > 0 ? "+" : ""}${r.delta}</span></div>
+      <div class="pinfo">
+        ${title ? `<p class="pq">${title}</p>` : ""}
+        ${meta ? `<p class="pmeta">${meta}</p>` : ""}
+        ${s.fact ? `<p class="pfact">📚 ${esc(s.fact.text)} <a href="${wikiURL(s.fact.title)}" target="_blank" rel="noopener">Wikipedia ↗</a></p>` : ""}
+      </div>
+    </div>
     <div class="rv2"><div class="olist">${what}</div><div class="pboard ${list.length > 8 ? "dense" : ""}"><div class="board-title">Standings</div>${list.map(standing).join("")}</div></div>
-    ${role === "player" ? `<p class="muted" style="text-align:center;margin:0">⏳ Next round when the host is ready</p>` : ""}
-    ${perfChipHTML(s)}
+    ${role === "player" || perfChipHTML(s) ? `<div class="pfoot">${role === "player" ? `<span class="muted">⏳ Next round when the host is ready</span>` : ""}${perfChipHTML(s)}</div>` : ""}
   </div>`;
 }
 
@@ -1635,16 +1668,18 @@ function renderDrawPlayer() {
     app.innerHTML = `<div class="phone" id="drawroot" data-qi="${s.qi}">
       <div id="dhead"></div>
       ${modBadge(s.mod)}
-      ${artist
+      <div class="timer"><div class="timer-fill"></div><span class="timer-num"></span></div>
+      <div class="dstage ${off && !artist ? "" : "side2"}">
+      <div class="dtop">${artist
         ? `<div class="dword">✏️ Draw this, no letters:<b>${esc(s.q.text)}</b><small class="muted">${rival ? `draw-off vs ${rival.emoji} ${esc(rival.name)}` : "only you can see it"}</small></div>`
         : off ? `<div class="dword">🖌️ Draw-off:<b>${esc(s.q.text)}</b><small class="muted">watch them go, you vote next</small></div>`
-        : `<div class="dwho" style="text-align:center">🎨 ${d.drawerEmoji} <b>${esc(d.drawerName)}</b> is drawing</div><div class="dhint" id="dhint" style="text-align:center"></div>`}
-      <div class="timer"><div class="timer-fill"></div><span class="timer-num"></span></div>
-      ${artist ? `<div class="inkwrap"><canvas class="ink" id="pad" data-a="${ai}"></canvas></div>` : off ? duoHTML(s) : `<div><div class="inkwrap"><canvas class="ink"></canvas></div></div>`}
+        : `<div class="dwho">🎨 ${d.drawerEmoji} <b>${esc(d.drawerName)}</b> is drawing</div><div class="dhint" id="dhint"></div>`}</div>
+      <div class="dcanvas">${artist ? `<div class="inkwrap"><canvas class="ink" id="pad" data-a="${ai}"></canvas></div>` : off ? duoHTML(s) : `<div class="inkwrap"><canvas class="ink"></canvas></div>`}</div>
       ${artist
-        ? `<div class="tools">${INK_COLORS.map((c) => `<button class="sw" data-c="${c}" style="background:${c}" title="${c === "#ffffff" ? "Eraser" : "Colour"}"></button>`).join("")}
+        ? `<div class="dbottom tools">${INK_COLORS.map((c) => `<button class="sw" data-c="${c}" style="background:${c}" title="${c === "#ffffff" ? "Eraser" : "Colour"}"></button>`).join("")}
             <button class="sz" data-w="10">thin</button><button class="sz" data-w="28">thick</button><button class="sz" id="undo" title="Undo (Ctrl+Z)">↩️ undo</button><button class="sz far" id="clear" title="Clear (undo brings it back)">🗑️ clear</button></div>`
-        : off ? "" : `<div id="gbox"></div><div class="feed" id="dfeed"></div>`}
+        : off ? "" : `<div class="dbottom"><div id="gbox"></div><div class="feed" id="dfeed"></div></div>`}
+      </div>
       <div id="dpowers"></div>
       <div id="doverlay"></div>
     </div>${reactsHTML()}`;
@@ -1664,7 +1699,7 @@ function renderDrawPlayer() {
   if (!artist && !off) {
     $("#dhint").textContent = s.q.text || d.hint;
     const got = me.answer !== null, frozen = serverNow() < me.frozenUntil;
-    if (got) $("#gbox").innerHTML = `<h2 class="display up" style="text-align:center;margin:0">✅ Got it!</h2>`;
+    if (got) $("#gbox").innerHTML = `<h2 class="display up gotit">✅ Got it!</h2>`;
     else if (!$("#ginput")) {
       $("#gbox").innerHTML = `<form class="gform" id="gform"><input id="ginput" maxlength="40" autocomplete="off" autocapitalize="off" placeholder="Type your guess…"><button>Guess</button></form>`;
       $("#gform").onsubmit = (e) => { e.preventDefault(); sendGuess($("#ginput"), psend); };
